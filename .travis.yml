@@ -1,0 +1,33 @@
+dist: trusty
+language: rust
+
+matrix:
+  fast_finish: true
+  include:
+    - rust: nightly
+    - rust: beta
+    - rust: stable
+
+  allow_failures:
+    - rust: nightly
+
+before_install:
+  - set -e
+  - rustup self update
+  - which cargo-audit || cargo install cargo-audit
+
+script:
+  - cargo check
+  - cargo test
+  - cargo audit
+
+after_script: set +e
+
+cache: cargo
+before_cache:
+  # Travis can't cache files that are not readable by "others"
+  - chmod -R a+r $HOME/.cargo
+
+# notifications:
+#   email:
+#     on_success: never
