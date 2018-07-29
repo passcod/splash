@@ -28,56 +28,45 @@ fn test_local_radius() {
     assert_eq!(local_radius(-1.469167), 6356974.249836446);
 }
 
-/// Computes a distance on the Earth between two points.
+// in degrees
+struct Point {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Computes the distance and forward azimuth on the Earth between two points.
 ///
 /// Uses “inverse” geodesic equations from [Karney 2013] rather than Haversine
 /// (which has large errors) or Valenty’s (which is unstable for some inputs).
-/// Assumes the WGS84 geodesic.
+/// Assumes WGS84 geography.
 ///
 /// While inverse geodesic equations can have multiple solutions, the distance
-/// remains the same for all results. Thus, this implementation ignores those.
+/// remains the same for all results. At the moment, we ignore further
+/// results for the azimuth and return only the first found.
 ///
 /// This function was written with great help from [geographic]’s Geodesy Java
 /// library, written by the author of the paper cited above.
 ///
 /// [Karney 2013]: https://doi.org/10.1007/s00190-012-0578-z
 /// [geographic]: https://geographiclib.sourceforge.io/html/java/
-fn geodesic_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    //
+fn geodesic_distance(a: Point, b: Point) -> (f64, f64) {
+    (0.0, 0.0)
 }
 
 /// TX or RX site definition
 struct Site {
-    lat: f64,
-    lon: f64,
-    altitude: f64,
+    /// Where it is
+    position: Point,
+
+    /// How high above ground
+    aboveground: f64,
+
+    /// What it's called
     name: String,
-    filename: PathBuf,
-}
-
-struct RFPath {
-    lats: Vec<f64>,
-    lons: Vec<f64>,
-    elevations: Vec<f64>,
-    distances: Vec<f64>,
-    length: f64,
-}
-
-/// Preprocessed elevation data block of regular gridding.
-struct Dem {
-    latitude_min: f64,
-    latitude_max: f64,
-    latitude_num: usize,
-    longitude_min: f64,
-    longitude_max: f64,
-    longitude_num: usize,
-    elevation_min: f64,
-    elevation_max: f64,
-    data: Vec<Vec<f64>>,
 }
 
 /// Parameters for a Site
-struct Lrp {
+struct Parameters {
     /// Earth Dielectric Constant (Relative permittivity)
     dielectric: f64,
 
