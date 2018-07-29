@@ -1,8 +1,10 @@
 [package]
-name = "splash"
-version = "0.1.0"
 authors = ["Félix Saparelli <felix@passcod.name>"]
 description = "RF Signal Propagation analysis tool: like SPLAT! but more flexible"
 license = "Artistic-2.0"
+name = "splash"
+version = "0.1.0"
 
 [dependencies]
+gdal = "0.4.0"
+geo = "0.9.1"
