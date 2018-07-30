@@ -357,6 +357,7 @@ version = "0.1.0"
 dependencies = [
  "gdal 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "geo 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-complex 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

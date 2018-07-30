@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy_pedantic))]
 
+extern crate num_complex;
 extern crate gdal;
 extern crate geo;
 
 use geo::Point;
+use num_complex::Complex64;
 use std::path::PathBuf;
 
 const EQUATORIAL_RADIUS: f64 = 6_378_137.0;
@@ -33,6 +35,7 @@ fn test_local_radius() {
 }
 
 /// Base site definition.
+#[derive(Clone, Debug)]
 struct Site {
     /// Where it is
     position: Point<f64>,
@@ -45,6 +48,7 @@ struct Site {
 }
 
 /// An RF transmitter and its parameters.
+#[derive(Clone, Debug)]
 struct Transmitter {
     site: Site,
 
@@ -70,6 +74,7 @@ struct Transmitter {
     pattern: Vec<Vec<f64>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 enum Climate {
     Equatorial, // 1
     ContinentalSubtropical, // 2
@@ -80,10 +85,23 @@ enum Climate {
     MaritimeTemperateOverSea, // 7
 }
 
+impl Default for Climate {
+    fn default() -> Self {
+        Climate::ContinentalTemperate
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 enum Polarisation {
     Horizontal, // 0
     Vertical, // 1
     Dual, // n/a
+}
+
+impl Default for Polarisation {
+    fn default() -> Self {
+        Polarisation::Horizontal
+    }
 }
 
 //
@@ -140,6 +158,7 @@ enum Polarisation {
 // 	// qerfis
 // 	zc=qerfi(conf);
 // 	zr=qerfi(rel);
+//
 // 	np=(long)elev[0];
 // 	eno=eno_ns_surfref;
 // 	enso=0.0;
@@ -199,7 +218,7 @@ enum Polarisation {
 ///    an `Impossible(ParamName)` is returned.
 fn propagation(
     distance: f64,
-    elevations: Vec<f64>,
+    elevations: &Vec<f64>,
     tx_height: f64,
     rx_height: f64,
     dielectric: f64,
@@ -215,20 +234,22 @@ fn propagation(
     let mut zsys = 0.0;
 
     // prop things
-    /*
-    let prop = Prop {
-        hg: (tx_height, rx_height),
-        kwx: 0,
-        mdp: -1,
-    };
+    let mut propa = PropA::default();
 
-    let propv = PropV {
-        klim: climate,
-        lvar: 5,
-    };
-    */
+    let mut prop = Prop::default();
+    prop.hg = (tx_height, rx_height);
+    prop.mdp = -1;
+	prop.ens = surfref;
+	prop.wn = freq / 47.7;
+
+    let mut propv = PropV::default();
+    propv.klim = climate;
+    propv.lvar = 5;
+    propv.mdvar = 12;
 
     // qerfis
+    let zc = qerfi(conf);
+    let zr = qerfi(rel);
 
     // As far as I can tell, this takes the sum of elevations
     // from the second element to the penultimate one, and then
@@ -254,17 +275,16 @@ fn propagation(
 
         zsys /= (jb - ja + 1.0);
     } else { // rusty
-        let subset = &elevations[1..(elevations.len() - 2)];
+        let subset = &elevations[1..(elevations.len() - 1)];
         let sum: f64 = subset.iter().sum();
-        let zsys = sum / (subset.len() as f64);
+        zsys = sum / (subset.len() as f64);
     }
 
-    // q = surfref
+    qlrps(freq, zsys, surfref, polarisation, dielectric, conductivity, &mut prop);
+    qlrpfl(distance, elevations, climate, propv.mdvar, &mut prop, &mut propa, &mut propv);
 
-    // qlrps
-    // qlrpfl
-
-    // final
+    let fs = 32.45 + 20.0 * (freq.log10() + (prop.dist / 1000.0).log10());
+    // Ok(avar(zr, 0.0, zc, &mut prop, &mut propv) + fs);
 
     Ok(0.0)
 }
@@ -286,13 +306,333 @@ fn qerfi(q: f64) -> f64 {
 	if x < 0.0 { -v } else { v }
 }
 
+fn qlrps(
+    freq: f64,
+    zsys: f64,
+    surfref: f64,
+    pol: Polarisation,
+    dielect: f64,
+    conduct: f64,
+    prop: &mut Prop
+) {
+	let gma = 157e-9;
+
+	if zsys != 0.0 {
+		prop.ens *= (-zsys/9460.0).exp();
+    }
+
+	prop.gme = gma * (1.0 - 0.04665 * (prop.ens/179.3).exp());
+
+    let zq = Complex64::new(dielect, 376.62 * conduct / prop.wn);
+    let mut prop_zgnd = (zq - 1.0).sqrt();
+
+	if pol == Polarisation::Vertical {
+		prop_zgnd = prop_zgnd / zq;
+    }
+
+	prop.zgndreal = prop_zgnd.re;
+	prop.zgndimag = prop_zgnd.im;
+}
+
+fn qlrpfl(
+    distance: f64,
+    elevations: &Vec<f64>,
+    klimx: Climate,
+    mdvarx: isize,
+    mut prop: &mut Prop,
+    mut propa: &mut PropA,
+    mut propv: &mut PropV
+) {
+	// int np, j;
+	// double xl[2], q, za, zb, temp;
+
+	prop.dist = elevations.len() as f64 * distance;
+	let np = elevations.len();
+	hzns(distance, &elevations, &mut prop);
+
+    fn make_xl(hg: f64, dl: f64) -> f64 {
+        (15.0 * hg).min(0.1 * dl)
+    }
+
+    let mut q;
+    let mut z;
+    let mut xl = (
+        make_xl(prop.hg.0, prop.dl.0),
+        make_xl(prop.hg.1, prop.dl.1)
+    );
+
+	xl.1 = prop.dist - xl.1;
+	prop.dh = d1thx(distance, elevations, xl);
+
+	if prop.dl.0 + prop.dl.1 > 1.5 * prop.dist {
+        let (xl, nz) = z1sq1(distance, elevations, xl);
+        z = nz;
+		prop.he = (
+            prop.hg.0 + fortran_dim(elevations[0], z.0),
+		    prop.hg.1 + fortran_dim(elevations[np], z.1)
+        );
+
+        fn make_dl(he: f64, gme: f64, dh: f64) -> f64 {
+	        (2.0 * he / gme).sqrt() * (-0.07 * (dh / he.max(5.0)).sqrt()).exp()
+        }
+
+        prop.dl = (
+            make_dl(prop.he.0, prop.gme, prop.dh),
+            make_dl(prop.he.1, prop.gme, prop.dh)
+        );
+
+		q = prop.dl.0 + prop.dl.1;
+
+		if q <= prop.dist { /* if there is a rounded horizon, or two obstructions, in the path */
+			let temp = prop.dist / q;
+			q = temp * temp;
+
+            fn make_hedl(q: f64, he: f64, gme: f64, dh: f64) -> (f64, f64) {
+                let he = he * q; /* tx effective height set to be path dist/distance between obstacles */
+                (he, (2.0 * he / gme).sqrt() * (-0.07 * (dh / he.max(5.0)).sqrt()).exp())
+            }
+
+            let hedl = (
+                make_hedl(q, prop.he.0, prop.gme, prop.dh),
+                make_hedl(q, prop.he.1, prop.gme, prop.dh)
+            );
+
+            prop.he = ((hedl.0).0, (hedl.1).0);
+            prop.dl = ((hedl.0).1, (hedl.1).1);
+		}
+
+		/* original empirical adjustment?  uses delta-h to adjust grazing angles */
+        fn make_qthe(he: f64, gme: f64, dh: f64, dl: f64) -> (f64, f64) {
+            let q = (2.0 * he / gme).sqrt();
+            let the = (0.65 * dh * (q / dl - 1.0) - 2.0 * he) / q;
+            (q, the)
+        }
+
+        let qthe = (
+            make_qthe(prop.he.0, prop.gme, prop.dh, prop.dl.0),
+            make_qthe(prop.he.1, prop.gme, prop.dh, prop.dl.1)
+        );
+
+        q = (qthe.1).0;
+        prop.the = ((qthe.0).1, (qthe.1).1);
+	} else {
+        let (_, (z0, _)) = z1sq1(distance, elevations, (xl.0, 0.9 * prop.dl.0));
+        let (_, (_, z1)) = z1sq1(distance, elevations, (prop.dist - 0.9 * prop.dl.1, xl.1));
+
+		prop.he = (
+            prop.hg.0 + fortran_dim(elevations[0], z0),
+            prop.hg.1 + fortran_dim(elevations[np - 1], z1),
+        );
+	}
+
+	prop.mdp = -1;
+	propv.lvar = propv.lvar.max(3);
+
+	if mdvarx >= 0 {
+		propv.mdvar = mdvarx;
+		propv.lvar = propv.lvar.max(4);
+	}
+
+    propv.klim = klimx;
+    propv.lvar = 5;
+
+	//lrprop(0.0, prop, propa);
+}
+
+fn hzns(distance: f64, elevations: &Vec<f64>, prop: &mut Prop) {
+	let np = elevations.len();
+    let xi = distance;
+
+	let za = elevations[0] + prop.hg.0;
+	let zb = elevations[np-1] + prop.hg.1;
+
+    let qc = 0.5 * prop.gme;
+	let mut q = qc * prop.dist;
+
+    prop.the.1 = (zb - za) / prop.dist;
+	prop.the.0 = prop.the.1 - q;
+	prop.the.1 = -prop.the.1 - q;
+
+	prop.dl = (prop.dist, prop.dist);
+
+	if np >= 2 {
+		let mut sa = 0.0;
+		let mut sb = prop.dist;
+		let mut wq = true;
+
+        for i in 1..np {
+			sa += xi;
+			sb -= xi;
+            q = elevations[i] - (qc * sa + prop.the.0) * sa - za;
+
+			if q > 0.0 {
+				prop.the.0 += q / sa;
+				prop.dl.0 = sa;
+				wq = false;
+			}
+
+			if !wq {
+				q = elevations[i] - (qc * sb + prop.the.1) * sb - zb;
+
+				if q > 0.0 {
+					prop.the.1 += q/sb;
+					prop.dl.1 =sb;
+				}
+			}
+		}
+	}
+}
+
+fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
+	let np = elevations.len();
+	let mut xa = xl.0 / distance;
+	let xb = xl.1 / distance;
+	let mut d1thxv = 0.0;
+
+	if (xb - xa) < 2.0 { return d1thxv; }
+
+	let mut ka = (0.1 * (xb - xa + 8.0)) as usize;
+	ka = 4.max(ka).min(25);
+
+    let n = 10 * ka - 5;
+	let kb = n - ka + 1;
+	let sn = n - 1;
+    let mut s = Vec::with_capacity(n);
+
+	let mut xb = (xb - xa) / (sn as f64);
+	let mut k = (xa + 1.0) as usize;
+	xa -= k as f64;
+
+    for j in 0..n {
+		while xa > 0.0 && k < np {
+			xa -= 1.0;
+			k += 1;
+		}
+
+		s[j] = elevations[k] + (elevations[k] - elevations[k - 1]) * xa;
+		xa = xa + xb;
+	}
+
+	let ((_, sn), (mut xa, mut xb)) = z1sq1(1.0, &s, (0.0, sn as f64));
+	xb = (xb - xa) / (sn as f64);
+
+    for j in 0..n {
+		s[j] -= xa;
+		xa = xa + xb;
+	}
+
+	let d1thxv = qtile(n - 1, &mut s, ka - 1) - qtile(n - 1, &mut s, kb - 1);
+	d1thxv / (1.0 - 0.8 * (-(xl.1 - xl.0) / 50.0e3).exp())
+}
+
+fn z1sq1 (
+    distance: f64,
+    elevations: &Vec<f64>,
+    x: (f64, f64)
+) -> ((f64, f64), (f64, f64)) {
+	let xn = elevations.len() as f64;
+	let mut xa = fortran_dim(x.0 / distance, 0.0) as isize as f64;
+	let mut xb = xn - (fortran_dim(xn, x.1 / distance) as isize as f64);
+
+	if xb <= xa {
+		xa = fortran_dim(xa, 1.0);
+		xb = xn - fortran_dim(xn, xb + 1.0);
+	}
+
+	let mut ja = xa as usize;
+	let jb = xb as usize;
+
+    let n = jb - ja;
+	xa = xb - xa;
+
+	let mut xx = -0.5 * xa;
+	xb += xx;
+
+	let mut a = 0.5 * (elevations[ja] + elevations[jb]);
+	let mut b = 0.5 * (elevations[ja] - elevations[jb]) * xx;
+
+	for _ in 2..=n {
+		ja += 1;
+		xx += 1.0;
+		a += elevations[ja];
+		b += elevations[ja] * xx;
+	}
+
+	a /= xa;
+	b = b * 12.0 / ((xa * xa + 2.0) * xa);
+
+    (x, (a - b * xb, a + b * (xn - xb)))
+}
+
+fn fortran_dim(x: f64, y: f64) -> f64 {
+    (x - y).max(0.0)
+}
+
+fn qtile (nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
+    let mut m = 0;
+    let mut n = nn;
+    let k = 0.max(ir).min(n);
+
+    let mut q = 0.0;
+    let mut r: f64;
+    let mut j: usize;
+    let mut j1 = 0;
+    let mut i0 = 0;
+
+    let mut i = 0;
+    let mut goto10 = true;
+	loop {
+		if (goto10) {
+			q = elevations[k];
+			i0 = m;
+			j1 = n;
+		}
+
+		i = i0;
+
+		while i <= n && elevations[i] >= q { i += 1; }
+
+		if i > n { i = n; }
+
+		j = j1;
+
+		while j >= m && elevations[j] <= q { j -= 1; }
+
+		if j < m { j = m; }
+
+		if i < j {
+			r = elevations[i];
+			elevations[i] = elevations[j];
+			elevations[j] = r;
+			i0 = i + 1;
+			j1 = j - 1;
+			goto10 = false;
+		} else if i < k {
+			elevations[k] = elevations[i];
+			elevations[i] = q;
+			m = i + 1;
+			goto10 = true;
+		} else if j > k {
+			elevations[k] = elevations[j];
+			elevations[j] = q;
+			n = j - 1;
+			goto10 = true;
+		} else {
+		    break;
+        }
+	}
+
+	return q;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 struct Prop {
     pub aref: f64,
 	pub dist: f64,
 
     /// Heights (tx, rx)
 	pub hg: (f64, f64),
-	pub rch: [f64; 2],
+	pub rch: (f64, f64),
 	pub wn: f64,
 	pub dh: f64,
 	pub dhd: f64,
@@ -303,9 +643,9 @@ struct Prop {
 	pub gme: f64,
 	pub zgndreal: f64,
 	pub zgndimag: f64,
-	pub he: [f64; 2],
-	pub dl: [f64; 2],
-	pub the: [f64; 2],
+	pub he: (f64, f64),
+	pub dl: (f64, f64),
+	pub the: (f64, f64),
 	pub tiw: f64,
 	pub ght: f64,
 	pub ghr: f64,
@@ -323,6 +663,7 @@ struct Prop {
 	pub los: isize,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 struct PropV {
     pub sgc: f64,
 	pub lvar: isize,
@@ -330,11 +671,29 @@ struct PropV {
 	pub klim: Climate,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+struct PropA {
+    pub dlsa: f64,
+    pub dx:  f64,
+    pub ael: f64,
+    pub ak1: f64,
+    pub ak2: f64,
+    pub aed: f64,
+    pub emd: f64,
+    pub aes: f64,
+    pub ems: f64,
+    pub dls: (f64, f64),
+    pub dla: f64,
+    pub tha: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 enum PropagationError {
     OutOfBounds(ParamName),
     Impossible(ParamName)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 enum ParamName {
     Elevation,
     Dielectric,
