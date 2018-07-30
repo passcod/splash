@@ -12,10 +12,8 @@ use std::path::PathBuf;
 const EQUATORIAL_RADIUS: f64 = 6_378_137.0;
 const POLAR_RADIUS: f64 = 6_356_752.3;
 
-const FZONE_CLEARANCE: f64 = 0.6;
-
 /// Computes the geocentric radius (in metres) at a given latitude (in degrees).
-fn local_radius(latitude: f64) -> f64 {
+pub fn local_radius(latitude: f64) -> f64 {
     let cos = latitude.cos();
     let sin = latitude.sin();
 
@@ -36,7 +34,7 @@ fn test_local_radius() {
 
 /// Base site definition.
 #[derive(Clone, Debug)]
-struct Site {
+pub struct Site {
     /// Where it is
     position: Point<f64>,
 
@@ -49,7 +47,7 @@ struct Site {
 
 /// An RF transmitter and its parameters.
 #[derive(Clone, Debug)]
-struct Transmitter {
+pub struct Transmitter {
     site: Site,
 
     /// Earth Dielectric Constant (Relative permittivity)
@@ -75,7 +73,7 @@ struct Transmitter {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-enum Climate {
+pub enum Climate {
     Equatorial, // 1
     ContinentalSubtropical, // 2
     MaritimeSubtropical, // 3
@@ -92,7 +90,7 @@ impl Default for Climate {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-enum Polarisation {
+pub enum Polarisation {
     Horizontal, // 0
     Vertical, // 1
     Dual, // n/a
@@ -216,7 +214,7 @@ impl Default for Polarisation {
 ///  - If any parameter is **impossible**, i.e. not out of range but, in
 ///    combination with the rest of the parameters, of a non-sensical value,
 ///    an `Impossible(ParamName)` is returned.
-fn propagation(
+pub fn propagation(
     distance: f64,
     elevations: &Vec<f64>,
     tx_height: f64,
@@ -273,17 +271,21 @@ fn propagation(
             zsys += elevations[i];
         }
 
-        zsys /= (jb - ja + 1.0);
+        zsys /= jb - ja + 1.0;
     } else { // rusty
         let subset = &elevations[1..(elevations.len() - 1)];
         let sum: f64 = subset.iter().sum();
         zsys = sum / (subset.len() as f64);
     }
 
-    qlrps(freq, zsys, surfref, polarisation, dielectric, conductivity, &mut prop);
+    qlrps(zsys, polarisation, dielectric, conductivity, &mut prop);
     qlrpfl(distance, elevations, climate, propv.mdvar, &mut prop, &mut propa, &mut propv);
 
     let fs = 32.45 + 20.0 * (freq.log10() + (prop.dist / 1000.0).log10());
+    println!(
+        "avar(zr: {:?}, 0.0, zc: {:?}, prop: {:?}, propv: {:?}) + fs: {:?}",
+        zr, zc, prop, propv, fs
+    );
     // Ok(avar(zr, 0.0, zc, &mut prop, &mut propv) + fs);
 
     Ok(0.0)
@@ -291,25 +293,23 @@ fn propagation(
 
 /// Some kind of normalising function? Who knows though.
 fn qerfi(q: f64) -> f64 {
-	let c0=2.515516698;
-	let c1=0.802853;
-	let c2=0.010328;
-	let d1=1.432788;
-	let d2=0.189269;
-	let d3=0.001308;
+	let c0 = 2.515516698;
+	let c1 = 0.802853;
+	let c2 = 0.010328;
+	let d1 = 1.432788;
+	let d2 = 0.189269;
+	let d3 = 0.001308;
 
-	let x=0.5-q;
-	let mut t=(0.5-x.abs()).max(0.000001);
-	t=(-2.0*t.ln()).sqrt();
-	let mut v=t-((c2*t+c1)*t+c0)/(((d3*t+d2)*t+d1)*t+1.0);
+	let x = 0.5 - q;
+	let mut t=(0.5 - x.abs()).max(0.000001);
+	t = (-2.0 * t.ln()).sqrt();
+	let v = t - ((c2 * t + c1) * t + c0) / (((d3 * t + d2) * t + d1) * t + 1.0);
 
 	if x < 0.0 { -v } else { v }
 }
 
 fn qlrps(
-    freq: f64,
     zsys: f64,
-    surfref: f64,
     pol: Polarisation,
     dielect: f64,
     conduct: f64,
@@ -343,9 +343,6 @@ fn qlrpfl(
     mut propa: &mut PropA,
     mut propv: &mut PropV
 ) {
-	// int np, j;
-	// double xl[2], q, za, zb, temp;
-
 	prop.dist = elevations.len() as f64 * distance;
 	let np = elevations.len();
 	hzns(distance, &elevations, &mut prop);
@@ -355,7 +352,7 @@ fn qlrpfl(
     }
 
     let mut q;
-    let mut z;
+    let z;
     let mut xl = (
         make_xl(prop.hg.0, prop.dl.0),
         make_xl(prop.hg.1, prop.dl.1)
@@ -365,7 +362,7 @@ fn qlrpfl(
 	prop.dh = d1thx(distance, elevations, xl);
 
 	if prop.dl.0 + prop.dl.1 > 1.5 * prop.dist {
-        let (xl, nz) = z1sq1(distance, elevations, xl);
+        let (_, nz) = z1sq1(distance, elevations, xl);
         z = nz;
 		prop.he = (
             prop.hg.0 + fortran_dim(elevations[0], z.0),
@@ -402,19 +399,15 @@ fn qlrpfl(
 		}
 
 		/* original empirical adjustment?  uses delta-h to adjust grazing angles */
-        fn make_qthe(he: f64, gme: f64, dh: f64, dl: f64) -> (f64, f64) {
+        fn make_qthe(he: f64, gme: f64, dh: f64, dl: f64) -> f64 {
             let q = (2.0 * he / gme).sqrt();
-            let the = (0.65 * dh * (q / dl - 1.0) - 2.0 * he) / q;
-            (q, the)
+            (0.65 * dh * (q / dl - 1.0) - 2.0 * he) / q
         }
 
-        let qthe = (
+        prop.the = (
             make_qthe(prop.he.0, prop.gme, prop.dh, prop.dl.0),
             make_qthe(prop.he.1, prop.gme, prop.dh, prop.dl.1)
         );
-
-        q = (qthe.1).0;
-        prop.the = ((qthe.0).1, (qthe.1).1);
 	} else {
         let (_, (z0, _)) = z1sq1(distance, elevations, (xl.0, 0.9 * prop.dl.0));
         let (_, (_, z1)) = z1sq1(distance, elevations, (prop.dist - 0.9 * prop.dl.1, xl.1));
@@ -436,6 +429,7 @@ fn qlrpfl(
     propv.klim = klimx;
     propv.lvar = 5;
 
+    println!("lrprop(0.0, prop: {:?}, propa: {:?})", prop, propa);
 	//lrprop(0.0, prop, propa);
 }
 
@@ -487,9 +481,8 @@ fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
 	let np = elevations.len();
 	let mut xa = xl.0 / distance;
 	let xb = xl.1 / distance;
-	let mut d1thxv = 0.0;
 
-	if (xb - xa) < 2.0 { return d1thxv; }
+	if (xb - xa) < 2.0 { return 0.0; }
 
 	let mut ka = (0.1 * (xb - xa + 8.0)) as usize;
 	ka = 4.max(ka).min(25);
@@ -499,7 +492,7 @@ fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
 	let sn = n - 1;
     let mut s = Vec::with_capacity(n);
 
-	let mut xb = (xb - xa) / (sn as f64);
+	let xb = (xb - xa) / (sn as f64);
 	let mut k = (xa + 1.0) as usize;
 	xa -= k as f64;
 
@@ -579,10 +572,10 @@ fn qtile (nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
     let mut j1 = 0;
     let mut i0 = 0;
 
-    let mut i = 0;
+    let mut i;
     let mut goto10 = true;
 	loop {
-		if (goto10) {
+		if goto10 {
 			q = elevations[k];
 			i0 = m;
 			j1 = n;
@@ -626,7 +619,7 @@ fn qtile (nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-struct Prop {
+pub struct Prop {
     pub aref: f64,
 	pub dist: f64,
 
@@ -664,7 +657,7 @@ struct Prop {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-struct PropV {
+pub struct PropV {
     pub sgc: f64,
 	pub lvar: isize,
 	pub mdvar: isize,
@@ -672,7 +665,7 @@ struct PropV {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-struct PropA {
+pub struct PropA {
     pub dlsa: f64,
     pub dx:  f64,
     pub ael: f64,
@@ -688,13 +681,13 @@ struct PropA {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-enum PropagationError {
+pub enum PropagationError {
     OutOfBounds(ParamName),
     Impossible(ParamName)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-enum ParamName {
+pub enum ParamName {
     Elevation,
     Dielectric,
     Conductivity,
