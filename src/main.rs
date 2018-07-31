@@ -298,7 +298,6 @@ pub fn propagation(
     Ok(0.0)
 }
 
-/// Some kind of normalising function? Who knows though.
 fn qerfi(q: f64) -> f64 {
 	let c0 = 2.515516698;
 	let c1 = 0.802853;
@@ -436,8 +435,7 @@ fn qlrpfl(
     propv.klim = klimx;
     propv.lvar = 5;
 
-    println!("lrprop(0.0, prop: {:?}, propa: {:?})", prop, propa);
-	//lrprop(0.0, prop, propa);
+	lrprop(0.0, prop, propa);
 }
 
 fn hzns(distance: f64, elevations: &Vec<f64>, prop: &mut Prop) {
@@ -624,6 +622,202 @@ fn qtile (nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
 
 	return q;
 }
+
+fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
+    let mut dmin: f64 = 0.0;
+    let mut xae: f64 = 0.0;
+    let mut wlos: bool = false;
+	let mut wscat: bool = false;
+    let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
+
+	if prop.mdp != 0 {
+        propa.dls.0 = (2.0 * prop.he.0 / prop.gme).sqrt();
+        propa.dls.1 = (2.0 * prop.he.1 / prop.gme).sqrt();
+
+		propa.dlsa = propa.dls.0 + propa.dls.1;
+		propa.dla = prop.dl.0 + prop.dl.1;
+		propa.tha = (prop.the.0 + prop.the.1).max(-propa.dla * prop.gme);
+
+        wlos = false;
+        wscat = false;
+
+
+		if prop.wn < 0.838 || prop.wn > 210.0 {
+			prop.kwx = prop.kwx.max(1);
+        }
+
+        fn make_kwx_hg(kwx: isize, hg: f64) -> isize {
+            if hg < 1.0 || hg > 1000.0 {
+                kwx.max(1)
+            } else {
+                kwx
+            }
+        }
+
+        prop.kwx = make_kwx_hg(prop.kwx, prop.hg.0);
+        prop.kwx = make_kwx_hg(prop.kwx, prop.hg.1);
+
+        fn make_kwx_dl(kwx: isize, the: f64, dl: f64, dls: f64) -> isize {
+            if (the.abs() > 200e-3) || (dl < 0.1 * dls) || (dl > 3.0 * dls) {
+                kwx.max(3)
+            } else {
+                kwx
+            }
+        }
+
+        prop.kwx = make_kwx_dl(prop.kwx, prop.the.0, prop.dl.0, propa.dls.0);
+        prop.kwx = make_kwx_dl(prop.kwx, prop.the.1, prop.dl.1, propa.dls.1);
+
+		if (prop.ens < 250.0) || (prop.ens > 400.0) || (prop.gme < 75e-9) || (prop.gme > 250e-9) || (prop_zgnd.re <= prop_zgnd.im.abs()) || (prop.wn < 0.419) || (prop.wn > 420.0) {
+			prop.kwx = 4;
+        }
+
+        fn make_kwx_hg_again(kwx: isize, hg: f64) -> isize {
+            if hg < 0.5 || hg > 3000.0 {
+                4
+            } else {
+                kwx
+            }
+        }
+
+        prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.0);
+        prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.1);
+
+		dmin = (prop.he.0 - prop.he.1).abs() / 200e-3;
+		adiff(0.0, prop, propa);
+		xae = (prop.wn * prop.gme.powi(2)).cbrt();
+		let d3 = propa.dlsa.max(1.3787 * xae + propa.dla);
+		let d4 = d3 + 2.7574 * xae;
+		let a3 = adiff(d3, prop, propa);
+		let a4 = adiff(d4, prop, propa);
+		propa.emd = (a4 - a3) / (d4 - d3);
+		propa.aed = a3 - propa.emd * d3;
+	}
+
+	if prop.mdp >= 0 {
+		prop.mdp = 0;
+		prop.dist = d;
+	}
+
+	if prop.dist > 0.0 {
+		if prop.dist > 1000e3 {
+			prop.kwx = prop.kwx.max(1);
+        }
+
+		if prop.dist < dmin {
+			prop.kwx = prop.kwx.max(3);
+        }
+
+		if prop.dist < 1e3 || prop.dist > 2000e3 {
+			prop.kwx = 4;
+        }
+	}
+
+	if prop.dist < propa.dlsa {
+		if !wlos {
+			alos(0.0, prop, propa);
+			let d2 = propa.dlsa;
+			let a2 = propa.aed + d2 * propa.emd;
+			let mut d0 = 1.908 * prop.wn * prop.he.0 * prop.he.1;
+
+            let d1;
+			if propa.aed >= 0.0 {
+				d0 = d0.min(0.5 * propa.dla);
+				d1 = d0 + 0.25 * (propa.dla - d0);
+			} else {
+				d1 = (-propa.aed / propa.emd).max(0.25 * propa.dla);
+            }
+
+			let a1 = alos(d1, prop, propa);
+
+			if d0 < d1 {
+				let a0 = alos(d0, prop, propa);
+				let q = (d2 / d0).ln();
+				propa.ak2 = 0.0f64.max(
+                    ((d2 - d0) * (a1 - a0) - (d1 - d0) * (a2 - a0))
+                    /
+                    ((d2 - d0) * (d1 / d0).ln() - (d1 - d0) * q)
+                );
+
+                let wq = propa.aed >= 0.0 || propa.ak2 > 0.0;
+
+				if wq {
+					propa.ak1 = (a2 - a0 - propa.ak2 * q) / (d2 - d0);
+
+					if propa.ak1 < 0.0 {
+						propa.ak1 = 0.0;
+						propa.ak2 = fortran_dim(a2, a0) / q;
+
+						if propa.ak2 == 0.0 {
+							propa.ak1 = propa.emd;
+                        }
+					}
+				} else {
+					propa.ak2 = 0.0;
+					propa.ak1 = (a2 - a1) / (d2 - d1);
+
+					if propa.ak1 <= 0.0 {
+						propa.ak1 = propa.emd;
+                    }
+				}
+			} else {
+				propa.ak1 = (a2 - a1) / (d2 - d1);
+				propa.ak2 = 0.0;
+
+				if propa.ak1 <= 0.0 {
+					propa.ak1 = propa.emd;
+                }
+			}
+
+			propa.ael = a2 - propa.ak1 * d2 - propa.ak2 * d2.ln();
+			wlos = true;
+		}
+
+		if  prop.dist > 0.0 {
+			prop.aref = propa.ael + propa.ak1 * prop.dist + propa.ak2 * prop.dist.ln();
+        }
+	}
+
+	if prop.dist <= 0.0 || prop.dist >= propa.dlsa {
+		if !wscat {
+			ascat(0.0, prop, propa);
+			let d5 = propa.dla + 200e3;
+			let d6 = d5 + 200e3;
+			let a6 = ascat(d6, prop, propa);
+			let a5 = ascat(d5, prop, propa);
+
+			if a5 < 1000.0 {
+				propa.ems = (a6 - a5) / 200e3;
+				propa.dx = propa.dlsa.max(
+                    (propa.dla + 0.3 * xae * (47.7 * prop.wn).ln()).max(
+                        (a5 - propa.aed - propa.ems * d5) / (propa.emd - propa.ems)
+                    )
+                );
+				propa.aes = (propa.emd - propa.ems) * propa.dx + propa.aed;
+			} else {
+				propa.ems = propa.emd;
+				propa.aes = propa.aed;
+				propa.dx = 10.0e6;
+			}
+
+			wscat = true;
+		}
+
+		if prop.dist > propa.dx {
+			prop.aref = propa.aes + propa.ems * prop.dist;
+        } else {
+			prop.aref = propa.aed + propa.emd * prop.dist;
+        }
+	}
+
+    // ??? not used otherwise
+    println!("WSCAT: {}  WLOS: {}", wscat, wlos);
+	prop.aref = prop.aref.max(0.0);
+}
+
+fn adiff(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
+fn alos(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
+fn ascat(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Prop {
