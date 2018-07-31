@@ -188,20 +188,27 @@ impl Default for Polarisation {
 
 /// Computes the propagation at a point along a point-to-point line.
 ///
-/// This function is black magic to me. I initially ported it straight from the
-/// SPLAT source, then adjusted it to fit a Rusty aesthetic. The original source
-/// is unscrutable. Even deriving the meaning of variables and subroutine names
-/// was an Herculean effort.
+/// This function and associated helpers were initially derived from a C++
+/// translation of the original FORTRAN based of the ITM, the [Irregular Terrain
+/// Model][ITM68], also known as Longley-Rice, an empirical RF propagation model
+/// developed at the National Telecommunications and Information Administration
+/// of the United States in the 1960s by Anita Longley and Phil Rice.
 ///
-/// The original returned, in addition to a single number, a modestring
-/// containing what I guessed was diagnostic or analysis results for two or
-/// three possibilities along two axes, and a warning code which indicated
-/// when results would be non-sensical because parameters were out of range.
+/// While the initial reconstruction was done referring to the above-mentioned
+/// source and its adaptation in [SPLAT!], all variables and function names were
+/// still unscrutable, as was the general operation of the model. Thus, the code
+/// was then cross-referenced back to the [LaTeX documentation][ITM122] of the
+/// ITM version 1.2.2, and made more legible and understandable by deriving
+/// meaningful names and incorporating documentation into this source, as well
+/// as doing some restructuring by referring back to George Hufford's 1999 memo
+/// describing “[The Algorithm][GH1999]” in exceedingly pleasant prose.
 ///
-/// I have completely discarded the modestring, and simplified the code through
-/// that. I have also taken a harsher route on the out of range thing: if params
-/// are out of range, or results are non-sensical, an error is returned. That
-/// might make Splash somewhat less useful for extreme cases: fine by me.
+/// This implementation is released in the Public Domain.
+///
+/// [GH1999]: https://www.its.bldrdoc.gov/media/50676/itm_alg.pdf
+/// [ITM122]: https://www.its.bldrdoc.gov/media/50674/itm.pdf
+/// [ITM68]: https://www.its.bldrdoc.gov/resources/radio-propagation-software/itm/itm.aspx
+/// [SPLAT!]: http://www.qsl.net/kd2bd/splat.html
 ///
 /// ## Errors
 ///
