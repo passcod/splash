@@ -8,6 +8,9 @@ extern crate geo;
 use geo::Point;
 use itm::*;
 
+// Avoid "oh no you're not using this" warnings
+pub use itm::propagation;
+
 mod itm;
 
 const EQUATORIAL_RADIUS: f64 = 6_378_137.0;

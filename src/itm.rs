@@ -15,7 +15,7 @@
 //! as doing some restructuring by referring back to George Hufford's 1999 memo
 //! describing “[The Algorithm][GH1999]” in exceedingly pleasant prose.
 //!
-//! The goal is to be able to read this documentation or source, and be able to
+//! The goal is to be able to read this documentation or source, and
 //! _understand_ the algorithm, without referring back to other documents listed
 //! above. Please file bugs if something is unclear.
 //!
@@ -750,9 +750,148 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
 	prop.aref = prop.aref.max(0.0);
 }
 
-fn adiff(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
-fn alos(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
-fn ascat(_: f64, prop: &mut Prop, propa: &mut PropA) -> f64 { 0.0 }
+fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
+    let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
+
+    // this is setting up data for iterations beyond the first (d=0 == first)
+    // gotta figure out how to do this in rust...
+    // ...without sharing data between *different* runs!
+	if d == 0.0 {
+		let mut q = prop.hg.1 * prop.hg.1;
+		let qk = prop.he.0 * prop.he.1 - q;
+
+		if prop.mdp < 0 {
+			q += 10.0;
+        }
+
+		let wd1 = (1.0 + qk / q).sqrt();
+		let xd1 = propa.dla + propa.tha / prop.gme;
+
+		q = (1.0 - 0.8 * (-propa.dlsa / 50e3 ).exp()) * prop.dh;
+		q *= 0.78 * (-(q / 16.0).powf(0.25)).exp();
+
+		let afo = 15.0f64.min(2.171 * (1.0 + 4.77e-4 * prop.hg.0 * prop.hg.1 * prop.wn * q).ln());
+		let qk = 1.0 / prop_zgnd.norm_sqr().sqrt();
+		let mut aht = 20.0;
+		let mut xht = 0.0;
+
+        if false {
+            fn make_axht(dl: f64, he: f64, wn: f64, qk: f64) -> (f64, f64) {
+                let a = 0.5 * dl.powi(2) / he;
+                let wa = (a * wn).cbrt();
+                let pk = qk / wa;
+                let q = (1.607 - pk) * 151.0 * wa * dl / a;
+                (q, fht(q, pk))
+            }
+
+            let (x, a) = make_axht(prop.dl.0, prop.he.0, prop.wn, qk);
+            xht += x;
+            aht += a;
+
+            let (x, a) = make_axht(prop.dl.1, prop.he.1, prop.wn, qk);
+            xht += x;
+            aht += a;
+        }
+
+		0.0 // ???
+	} else {
+		let th = propa.tha + d * prop.gme;
+		let ds = d - propa.dla;
+		let mut q = 0.0795775 * prop.wn * ds * th * th;
+		let adiffv = aknfe(q * prop.dl.0 / (ds + prop.dl.0))
+            + aknfe(q * prop.dl.1 / (ds + prop.dl.1));
+
+        // These were added in as they were not set before in this branch wtf???
+        let qk = 0.0;
+        let xht = 0.0;
+        let aht = 0.0;
+        let wd1 = 0.0;
+        let xd1 = 0.0;
+        let afo = 0.0;
+
+        let a = ds / th;
+		let wa = (a * prop.wn).cbrt();
+		let pk = qk / wa;
+		q = (1.607 - pk) * 151.0 * wa * th + xht;
+		let ar = 0.05751 * q - 4.343 * q.ln() - aht;
+		q = (wd1 + xd1 / d) * 6283.2f64.min(
+            (1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh * prop.wn
+        );
+
+        let wd = 25.1 / (25.1 + q.sqrt());
+		ar * wd + (1.0 - wd) * adiffv + afo
+	}
+}
+
+fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
+	let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
+    let mut wls = 0.0;
+
+    // see adiff comment
+	if d == 0.0 {
+		wls = 0.021 / (0.021 + prop.wn * prop.dh / 10e3f64.max(propa.dlsa));
+		0.0
+	} else {
+		let mut q = (1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh;
+		let s = 0.78 * q * (-(q / 16.0).powf(0.25)).exp();
+		q = prop.he.0 + prop.he.1;
+		let sps = q / (d.powi(2) + q.powi(2)).sqrt();
+		let mut r = (sps - prop_zgnd) / (sps + prop_zgnd)
+            * (-10.0f64.min(prop.wn * s * sps)).exp();
+		q = r.norm_sqr();
+
+		if q < 0.25 || q < sps {
+			r = r * (sps / q).sqrt();
+        }
+
+		let alosv = propa.emd * d + propa.aed;
+		q = prop.wn * prop.he.0 * prop.he.1 * 2.0 / d;
+
+		if q > 1.57 {
+			q = 3.14 - 2.4649 / q;
+        }
+
+        let qq = Complex64::new(q.cos(), -q.sin());
+		(-4.343 * (qq + r).norm_sqr().ln() - alosv) * wls + alosv
+	}
+}
+
+
+fn aknfe(v2: f64) -> f64
+{
+	if v2 < 5.76 {
+		6.02 + 9.11 * v2.sqrt() - 1.27 * v2
+	} else {
+		12.953 + 10.0 * v2.log10()
+    }
+}
+
+fn fht(x: f64, pk: f64) -> f64 {
+    let mut fhtv;
+
+    if x < 200.0 {
+		let w = -pk.ln();
+
+		if pk < 1.0e-5 || x * w.powi(3) > 5495.0 {
+			fhtv =- 117.0;
+
+			if x > 1.0 {
+				fhtv = 40.0 * x.log10() + fhtv;
+            }
+		} else {
+			fhtv = 2.5e-5 * x.powi(2) / pk - 8.686 * w - 15.0;
+        }
+	} else {
+		fhtv = 0.05751 * x - 10.0 * x.log10();
+
+		if x < 2000.0 {
+			let w = 0.0134 * x * (-0.005 * x).exp();
+			fhtv = (1.0 - w) * fhtv + w * (40.0 * x.log10() - 117.0);
+		}
+	}
+
+	fhtv
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Prop {
