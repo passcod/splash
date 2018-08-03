@@ -1,9 +1,9 @@
 //! The Longley-Rice Irregular Terrain Model for RF.
 //!
 //! This module was initially derived from a C++ translation of the original
-//! FORTRAN based of the ITM, the [Irregular Terrain Model][ITM68], also known
-//! as Longley-Rice, an empirical RF propagation model developed at the National
-//! Telecommunications and Information Administration of the United States in
+//! FORTRAN implementation of the ITM, the [Irregular Terrain Model][ITM68],
+//! also known as Longley-Rice, an empirical RF propagation model developed at
+//! the U.S. National Telecommunications and Information Administration around
 //! the 1960s by Anita Longley and Phil Rice.
 //!
 //! While the initial reconstruction was done referring to the above-mentioned
