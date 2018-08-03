@@ -9,7 +9,7 @@ use geo::Point;
 use itm::*;
 
 // Avoid "oh no you're not using this" warnings
-pub use itm::propagation;
+pub use itm::point_to_point;
 
 mod itm;
 
