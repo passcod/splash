@@ -559,10 +559,12 @@ fn qtile (nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
 }
 
 fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
+    // these 4 are cpp statics too
     let mut dmin: f64 = 0.0;
     let mut xae: f64 = 0.0;
     let mut wlos: bool = false;
 	let mut wscat: bool = false;
+
     let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
 
 	if prop.mdp != 0 {
@@ -745,8 +747,6 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         }
 	}
 
-    // ??? not used otherwise
-    println!("WSCAT: {}  WLOS: {}", wscat, wlos);
 	prop.aref = prop.aref.max(0.0);
 }
 
@@ -856,6 +856,72 @@ fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
 	}
 }
 
+fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
+	// static double ad, rr, etq, h0s;
+	// double h0, r1, r2, z0, ss, et, ett, th, q;
+	// double ascatv, temp;
+
+    let ad = 0.0;
+    let rr = 0.0;
+    let mut etq = 0.0;
+    let mut h0s = 0.0;
+
+    // see adiff comment
+	if d == 0.0 {
+		let mut ad = prop.dl.0 - prop.dl.1;
+		let mut rr = prop.he.1 / prop.rch.0;
+
+		if ad < 0.0 {
+			ad = -ad;
+			rr = 1.0/rr;
+		}
+
+		etq = (5.67e-6 * prop.ens - 2.32e-3) * prop.ens + 0.031;
+		h0s =- 15.0;
+		0.0
+	} else {
+        let mut h0;
+		if h0s > 15.0 {
+			h0 = h0s;
+		} else {
+			let th = prop.the.0 + prop.the.1 + d * prop.gme;
+			let mut r2 = 2.0 * prop.wn * th;
+			let r1 = r2 * prop.he.0;
+			r2 *= prop.he.1;
+
+			if r1 < 0.2 && r2 < 0.2 { return 1001.0; }
+
+			let mut ss = (d - ad) / (d + ad);
+			let mut q = rr / ss;
+			ss = ss.max(0.1);
+			q = q.max(0.1).min(10.0);
+			let z0 = (d - ad) * (d + ad) * th * 0.25 / d;
+
+			let temp = (z0/8.0e3).min(1.7).powi(6);
+			let et = (etq * (-temp).exp() + 1.0) * z0 / 1.7556e3;
+
+			let ett = et.max(1.0);
+			h0 = (h0f(r1, ett) + h0f(r2, ett)) * 0.5;
+			h0 += 1.38 - ett.ln().min(h0) * ss.ln() * q.ln() * 0.49;
+			h0 = fortran_dim(h0, 0.0);
+
+			if et < 1.0 {
+				let temp = (1.0 + 1.4142 / r1) * (1.0 + 1.4142 / r2);
+				h0 = et * h0 + (1.0 - et) * 4.343
+                    * (temp.powi(2) * (r1 + r2) / (r1 + r2 + 2.8284)).ln();
+			}
+
+			if h0 > 15.0 && h0s >= 0.0 {
+                h0 = h0s;
+            }
+		}
+
+		h0s = h0;
+		let th = propa.tha + d * prop.gme;
+		ahd(th * d) + 4.343 * (47.7 * prop.wn * th.powi(4)).ln() - 0.1
+            * (prop.ens - 301.0) * (-th * d / 40e3).exp() + h0
+	}
+}
 
 fn aknfe(v2: f64) -> f64
 {
@@ -893,8 +959,46 @@ fn fht(x: f64, pk: f64) -> f64 {
 	fhtv
 }
 
+fn h0f(r: f64, et: f64) -> f64 {
+	let a = [25.0, 80.0, 177.0, 395.0, 705.0];
+	let b = [24.0, 45.0,  68.0,  80.0, 105.0];
+
+	let (it, q) = if et <= 0.0 {
+		(1, 0.0)
+	} else if et >= 5.0 {
+		(5, 0.0)
+	} else {
+        (et as usize, et.fract())
+    };
+
+    let x = (1.0 / r).powi(2);
+	let h0fv = 4.343 * ((a[it - 1] * x + b[it - 1]) * x + 1.0).ln();
+
+	if q == 0.0 {
+        h0fv
+    } else {
+		(1.0 - q) * h0fv + q * 4.343 * ((a[it] * x + b[it]) * x + 1.0).ln()
+    }
+}
+
+fn ahd(td: f64) -> f64 {
+	let a = [   133.4,    104.6,     71.8];
+	let b = [0.332e-3, 0.212e-3, 0.157e-3];
+	let c = [  -4.343,   -1.086,    2.171];
+
+	let i = if td <= 10e3 {
+		0
+    } else if td <= 70e3 {
+		1
+    } else {
+		2
+    };
+
+    a[i] + b[i] * td + c[i] * td.ln()
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-pub struct Prop {
+ pub struct Prop {
     pub aref: f64,
 	pub dist: f64,
 
