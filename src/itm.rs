@@ -31,13 +31,13 @@ use num_complex::Complex64;
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum Climate {
-    Equatorial, // 1
-    ContinentalSubtropical, // 2
-    MaritimeSubtropical, // 3
-    Desert, // 4
-    ContinentalTemperate, // 5
-    MaritimeTemperateOverLand, // 6
-    MaritimeTemperateOverSea, // 7
+    Equatorial = 1,
+    ContinentalSubtropical = 2,
+    MaritimeSubtropical = 3,
+    Desert = 4,
+    ContinentalTemperate = 5,
+    MaritimeTemperateOverLand = 6,
+    MaritimeTemperateOverSea = 7,
 }
 
 impl Default for Climate {
@@ -224,13 +224,7 @@ pub fn propagation(
     qlrpfl(distance, elevations, climate, propv.mdvar, &mut prop, &mut propa, &mut propv);
 
     let fs = 32.45 + 20.0 * (freq.log10() + (prop.dist / 1000.0).log10());
-    println!(
-        "avar(zr: {:?}, 0.0, zc: {:?}, prop: {:?}, propv: {:?}) + fs: {:?}",
-        zr, zc, prop, propv, fs
-    );
-    // Ok(avar(zr, 0.0, zc, &mut prop, &mut propv) + fs);
-
-    Ok(0.0)
+    Ok(avar(zr, 0.0, zc, &mut prop, &mut propv) + fs)
 }
 
 fn qerfi(q: f64) -> f64 {
@@ -281,8 +275,8 @@ fn qlrpfl(
     klimx: Climate,
     mdvarx: isize,
     mut prop: &mut Prop,
-    mut propa: &mut PropA,
-    mut propv: &mut PropV
+    propa: &mut PropA,
+    propv: &mut PropV
 ) {
 	prop.dist = elevations.len() as f64 * distance;
 	let np = elevations.len();
@@ -995,6 +989,227 @@ fn ahd(td: f64) -> f64 {
     };
 
     a[i] + b[i] * td + c[i] * td.ln()
+}
+
+fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64 {
+	// static	int kdv;
+    // static bool ws, w1;
+    let mut kdv = 0;
+    let mut ws = false;
+    let mut w1 = false;
+
+	// static	double dexa, de, vmd, vs0, sgl, sgtm, sgtp, sgtd, tgtd,
+	// 	gm, gp, cv1, cv2, yv1, yv2, yv3, csm1, csm2, ysm1, ysm2,
+	// 	ysm3, csp1, csp2, ysp1, ysp2, ysp3, csd1, zd, cfm1, cfm2,
+	// 	cfm3, cfp1, cfp2, cfp3;
+	let mut dexa = 0.0;
+    let mut de = 0.0;
+    let mut vmd = 0.0;
+    let mut vs0 = 0.0;
+    let mut sgl = 0.0;
+    let mut sgtm = 0.0;
+    let mut sgtp = 0.0;
+    let mut sgtd = 0.0;
+    let mut tgtd = 0.0;
+	let mut gm = 0.0;
+    let mut gp = 0.0;
+    let mut zd = 0.0;
+    let cv1;
+    let cv2;
+    let yv1;
+    let yv2;
+    let yv3;
+    let csm1;
+    let csm2;
+    let ysm1;
+    let ysm2;
+	let ysm3;
+    let csp1;
+    let csp2;
+    let ysp1;
+    let ysp2;
+    let ysp3;
+    let csd1;
+    let cfm1;
+    let cfm2;
+	let cfm3;
+    let cfp1;
+    let cfp2;
+    let cfp3;
+
+	let bv1 = [-9.67,-0.62,1.26,-9.21,-0.62,-0.39,3.15];
+	let bv2 = [12.7,9.19,15.5,9.05,9.19,2.86,857.9];
+	let xv1 = [144.9e3,228.9e3,262.6e3,84.1e3,228.9e3,141.7e3,2222.0e3];
+	let xv2 = [190.3e3,205.2e3,185.2e3,101.1e3,205.2e3,315.9e3,164.8e3];
+	let xv3 = [133.8e3,143.6e3,99.8e3,98.6e3,143.6e3,167.4e3,116.3e3];
+	let bsm1 = [2.13,2.66,6.11,1.98,2.68,6.86,8.51];
+	let bsm2 = [159.5,7.67,6.65,13.11,7.16,10.38,169.8];
+	let xsm1 = [762.2e3,100.4e3,138.2e3,139.1e3,93.7e3,187.8e3,609.8e3];
+	let xsm2 = [123.6e3,172.5e3,242.2e3,132.7e3,186.8e3,169.6e3,119.9e3];
+	let xsm3 = [94.5e3,136.4e3,178.6e3,193.5e3,133.5e3,108.9e3,106.6e3];
+	let bsp1 = [2.11,6.87,10.08,3.68,4.75,8.58,8.43];
+	let bsp2 = [102.3,15.53,9.60,159.3,8.12,13.97,8.19];
+	let xsp1 = [636.9e3,138.7e3,165.3e3,464.4e3,93.2e3,216.0e3,136.2e3];
+	let xsp2 = [134.8e3,143.7e3,225.7e3,93.1e3,135.9e3,152.0e3,188.5e3];
+	let xsp3 = [95.6e3,98.6e3,129.7e3,94.2e3,113.4e3,122.7e3,122.9e3];
+	let bsd1 = [1.224,0.801,1.380,1.000,1.224,1.518,1.518];
+	let bzd1 = [1.282,2.161,1.282,20.,1.282,1.282,1.282];
+	let bfm1 = [1.0,1.0,1.0,1.0,0.92,1.0,1.0];
+	let bfm2 = [0.0,0.0,0.0,0.0,0.25,0.0,0.0];
+	let bfm3 = [0.0,0.0,0.0,0.0,1.77,0.0,0.0];
+	let bfp1 = [1.0,0.93,1.0,0.93,0.93,1.0,1.0];
+	let bfp2 = [0.0,0.31,0.0,0.19,0.31,0.0,0.0];
+	let bfp3 = [0.0,2.00,0.0,1.79,2.00,0.0,0.0];
+
+    let rt = 7.8;
+    let rl = 24.0;
+
+    let temp_klim = propv.klim as usize - 1;
+
+	if propv.lvar > 0 {
+        cv1=bv1[temp_klim];
+		cv2=bv2[temp_klim];
+		yv1=xv1[temp_klim];
+		yv2=xv2[temp_klim];
+		yv3=xv3[temp_klim];
+		csm1=bsm1[temp_klim];
+		csm2=bsm2[temp_klim];
+		ysm1=xsm1[temp_klim];
+		ysm2=xsm2[temp_klim];
+		ysm3=xsm3[temp_klim];
+		csp1=bsp1[temp_klim];
+		csp2=bsp2[temp_klim];
+		ysp1=xsp1[temp_klim];
+		ysp2=xsp2[temp_klim];
+		ysp3=xsp3[temp_klim];
+		csd1=bsd1[temp_klim];
+		zd=bzd1[temp_klim];
+		cfm1=bfm1[temp_klim];
+		cfm2=bfm2[temp_klim];
+		cfm3=bfm3[temp_klim];
+		cfp1=bfp1[temp_klim];
+		cfp2=bfp2[temp_klim];
+		cfp3=bfp3[temp_klim];
+
+		match propv.lvar {
+			4 => {
+    			kdv = propv.mdvar;
+    			ws = kdv >= 20;
+    			if ws {
+    				kdv -= 20;
+                }
+
+    			w1 = kdv >= 10;
+    			if w1 {
+    				kdv -= 10;
+                }
+
+    			if kdv < 0 || kdv > 3 {
+    				kdv = 0;
+    				prop.kwx = prop.kwx.max(2);
+    			}
+            },
+			3 => {
+    			let q = (0.133 * prop.wn).ln();
+    			gm = cfm1 + cfm2 / ((cfm3 * q).powi(2) + 1.0);
+    			gp = cfp1 + cfp2 / ((cfp3 * q).powi(2) + 1.0);
+            },
+			2 => {
+		        dexa = (18e6 * prop.he.0).sqrt() + (18e6 * prop.he.1).sqrt()
+                    + (575.7e12 / prop.wn).cbrt();
+            },
+			1 => {
+    			de = if prop.dist < dexa {
+    				130e3 * prop.dist / dexa
+    			} else {
+    				130e3 + prop.dist - dexa
+                };
+            },
+            _ => {}
+		}
+
+		vmd = curve(cv1, cv2, yv1, yv2, yv3, de);
+		sgtm = curve(csm1, csm2, ysm1, ysm2, ysm3, de) * gm;
+		sgtp = curve(csp1, csp2, ysp1, ysp2, ysp3, de) * gp;
+		sgtd = sgtp * csd1;
+		tgtd = (sgtp - sgtd) * zd;
+
+		sgl = if w1 {
+			0.0
+		} else {
+			let q = (1.0 - 0.8 * (-prop.dist / 50e3).exp()) * prop.dh * prop.wn;
+			10.0 * q / (q + 13.0)
+		};
+
+		vs0 = if ws {
+			0.0
+		} else {
+			(5.0 + 3.0 * (-de / 100e3).exp()).powi(2)
+		};
+
+		propv.lvar = 0;
+	}
+
+	let mut zt = zzt;
+	let mut zl = zzl;
+
+	match kdv {
+		0 => {
+    		zt = zzc;
+    		zl = zzc;
+        },
+		1 => {
+    		zl = zzc;
+        },
+		2 => {
+    		zl = zt;
+        },
+        _ => {}
+	};
+
+	if zt.abs() > 3.1 || zl.abs() > 3.1 || zzc.abs() > 3.1 {
+		prop.kwx = prop.kwx.max(1);
+    }
+
+	let sgt = if zt < 0.0 {
+		sgtm
+    } else if zt <= zd {
+		sgtp
+    } else {
+		sgtd + tgtd / zt
+    };
+
+	let vs = vs0 + (sgt * zt).powi(2) / (rt + zzc * zzc)
+        + (sgl * zl).powi(2) / (rl + zzc * zzc);
+
+	let (yr, sgc) = match kdv {
+        0 => {
+            (0.0, sgt.powi(2) + sgl.powi(2) + vs)
+        },
+        1 => {
+            (sgt * zt, sgl.powi(2) + vs)
+        },
+        2 => {
+            ((sgt.powi(2) + sgl.powi(2)).sqrt() * zt, vs)
+        },
+        _ => {
+            (sgt * zt + sgl * zl, vs)
+        }
+    };
+
+    propv.sgc = sgc.sqrt();
+
+	let avarv = prop.aref - vmd - yr - propv.sgc * zzc;
+	if avarv < 0.0 {
+		avarv * (29.0 - avarv) / (29.0 - 10.0 * avarv)
+    } else {
+        avarv
+    }
+}
+
+fn curve(c1: f64, c2: f64, x1: f64, x2: f64, x3: f64, de: f64) -> f64 {
+	(c1 + c2 / (1.0 + ((de - x2) / x3).powi(2)))
+        * (de / x1).powi(2) / (1.0 + (de / x1).powi(2))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
