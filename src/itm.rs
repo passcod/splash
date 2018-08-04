@@ -15,9 +15,9 @@
 //! as doing some restructuring by referring back to George Hufford's 1999 memo
 //! describing “[The Algorithm][GH1999]” in exceedingly pleasant prose.
 //!
-//! The goal is to be able to read this documentation or source, and
-//! _understand_ the algorithm, without referring back to other documents listed
-//! above. Please file bugs if something is unclear.
+//! The goal is to be able to read this documentation or source, and understand
+//! the algorithm, without referring back to other documents listed above.
+//! Please file bugs if something is unclear.
 //!
 //! This implementation is released in the Public Domain, although note that the
 //! NTIA requests any use of the ITM is properly credited.
@@ -61,8 +61,8 @@ pub fn point_to_point(
     propv.lvar = 5;
     propv.mdvar = 12;
 
-    let zc = qerfi(conf);
-    let zr = qerfi(rel);
+    let zc = inverse_normal_complementary(conf);
+    let zr = inverse_normal_complementary(rel);
 
     let subset = &elevations[1..(elevations.len() - 1)];
     let sum: f64 = subset.iter().sum();
@@ -81,21 +81,32 @@ pub fn point_to_point(
     }
 }
 
-fn qerfi(q: f64) -> f64 {
-	let c0 = 2.515516698;
-	let c1 = 0.802853;
-	let c2 = 0.010328;
-	let d1 = 1.432788;
-	let d2 = 0.189269;
-	let d3 = 0.001308;
-
+/// The inverse of the standard normal complementary probability function.
+///
+/// The standard normal complementary function is _Q(x) = 1 / √͞2͞π ∫ e^(-t²/2)_.
+/// This inverse is the solution for _x_ to _q = Q(x)_, also noted _Q¯¹(q)_.
+///
+/// This function is used to scale the inputs (the desired fractions of time,
+/// locations, situations to model) to later obtain normal quantiles.
+///
+/// The implementation is not the normal tables, but rather an approximation by
+/// [Cecil Hastings][Hastings55], with a maximum error of 4.5 × 10¯⁴.
+///
+/// In the C++ source, this function was called `qerfi`, hence the constants.
+///
+/// [Hastings55]: https://press.princeton.edu/titles/1133.html
+fn inverse_normal_complementary(q: f64) -> f64 {
 	let x = 0.5 - q;
-	let mut t=(0.5 - x.abs()).max(0.000001);
+	let mut t = (0.5 - x.abs()).max(0.000001);
 	t = (-2.0 * t.ln()).sqrt();
-	let v = t - ((c2 * t + c1) * t + c0) / (((d3 * t + d2) * t + d1) * t + 1.0);
+	let v = t - ((QERFI_C.2 * t + QERFI_C.1) * t + QERFI_C.0)
+        / (((QERFI_D.2 * t + QERFI_D.1) * t + QERFI_D.0) * t + 1.0);
 
 	if x < 0.0 { -v } else { v }
 }
+
+const QERFI_C: (f64, f64, f64) = (2.515516698, 0.802853, 0.010328);
+const QERFI_D: (f64, f64, f64) = (1.432788, 0.189269, 0.001308);
 
 fn qlrps(
     zsys: f64,
