@@ -61,9 +61,6 @@ pub fn point_to_point(
     propv.lvar = 5;
     propv.mdvar = 12;
 
-    let zc = inverse_normal_complementary(conf);
-    let zr = inverse_normal_complementary(rel);
-
     let subset = &elevations[1..(elevations.len() - 1)];
     let sum: f64 = subset.iter().sum();
     let zsys = sum / (subset.len() as f64);
@@ -71,6 +68,8 @@ pub fn point_to_point(
     qlrps(zsys, polarisation, dielectric, conductivity, &mut prop);
     qlrpfl(distance, elevations, climate, propv.mdvar, &mut prop, &mut propa, &mut propv);
 
+    let zc = inverse_normal_complementary(conf);
+    let zr = inverse_normal_complementary(rel);
     let fs = 32.45 + 20.0 * (freq.log10() + (prop.dist / 1000.0).log10());
     let ret = avar(zr, 0.0, zc, &mut prop, &mut propv) + fs;
 
@@ -993,9 +992,9 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
             _ => {}
 		}
 
-		vmd = curve(cv1, cv2, yv1, yv2, yv3, de);
-		sgtm = curve(csm1, csm2, ysm1, ysm2, ysm3, de) * gm;
-		sgtp = curve(csp1, csp2, ysp1, ysp2, ysp3, de) * gp;
+		vmd = ltfade_reference_from_climate(cv1, cv2, yv1, yv2, yv3, de);
+		sgtm = ltfade_reference_from_climate(csm1, csm2, ysm1, ysm2, ysm3, de) * gm;
+		sgtp = ltfade_reference_from_climate(csp1, csp2, ysp1, ysp2, ysp3, de) * gp;
 		sgtd = sgtp * csd1;
 		tgtd = (sgtp - sgtd) * zd;
 
@@ -1072,7 +1071,20 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     }
 }
 
-fn curve(c1: f64, c2: f64, x1: f64, x2: f64, x3: f64, de: f64) -> f64 {
+/// Long-term fading reference value derivation based on climate curves.
+///
+/// This function's only reference is in the FORTRAN source. No comment is given
+/// as to how it was derived, and whether the figure in the research are from
+/// this function, or whether the function is fit from the figure.
+///
+/// The figure is available in [Technical Note 101 Volume I][TN101-I] and
+/// [Volume II][TN101-II], sections 10 and III respectively.
+///
+/// For more background details see the `avar` function documentation.
+///
+/// [TN101-I]: https://www.its.bldrdoc.gov/publications/2726.aspx
+/// [TN101-II]: https://www.its.bldrdoc.gov/publications/2727.aspx
+fn ltfade_reference_from_climate(c1: f64, c2: f64, x1: f64, x2: f64, x3: f64, de: f64) -> f64 {
 	(c1 + c2 / (1.0 + ((de - x2) / x3).powi(2)))
         * (de / x1).powi(2) / (1.0 + (de / x1).powi(2))
 }
