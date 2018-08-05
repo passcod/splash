@@ -8,10 +8,7 @@ extern crate num_complex;
 use geo::Point;
 use itm::*;
 
-// Avoid "oh no you're not using this" warnings
-pub use itm::point_to_point;
-
-mod itm;
+pub mod itm;
 
 const EQUATORIAL_RADIUS: f64 = 6_378_137.0;
 const POLAR_RADIUS: f64 = 6_356_752.3;
@@ -67,15 +64,11 @@ pub struct Transmitter {
     frequency: f64,
 
     /// Radio climate
-    climate: Climate,
+    climate: climate::Climate,
 
     /// Polarisation
     polarisation: Polarisation,
 
     /// Antenna pattern
     pattern: Vec<Vec<f64>>,
-}
-
-fn main() {
-    println!("Hello, world!");
 }
