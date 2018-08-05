@@ -1176,13 +1176,13 @@ impl From<Climate> for ClimateConstants {
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum Climate {
-    Equatorial = 1,
-    ContinentalSubtropical = 2,
-    MaritimeSubtropical = 3,
-    Desert = 4,
-    ContinentalTemperate = 5,
-    MaritimeTemperateOverLand = 6,
-    MaritimeTemperateOverSea = 7,
+    Equatorial,
+    ContinentalSubtropical,
+    MaritimeSubtropical,
+    Desert,
+    ContinentalTemperate,
+    MaritimeTemperateOverLand,
+    MaritimeTemperateOverSea,
 }
 
 impl Default for Climate {
