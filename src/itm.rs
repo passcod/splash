@@ -476,12 +476,12 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             || (prop.wn < 0.419)
             || (prop.wn > 420.0)
         {
-            prop.kwx = 4;
+            prop.kwx = 4; // fail here
         }
 
         fn make_kwx_hg_again(kwx: isize, hg: f64) -> isize {
             if hg < 0.5 || hg > 3000.0 {
-                4
+                4 // fail here
             } else {
                 kwx
             }
@@ -516,7 +516,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         }
 
         if prop.dist < 1e3 || prop.dist > 2000e3 {
-            prop.kwx = 4;
+            prop.kwx = 4; // fail here
         }
     }
 
@@ -1251,9 +1251,8 @@ pub struct PropA {
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum Polarisation {
-    Horizontal, // 0
-    Vertical,   // 1
-    Dual,       // n/a
+    Horizontal,
+    Vertical,
 }
 
 impl Default for Polarisation {
