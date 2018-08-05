@@ -129,13 +129,12 @@ fn qlrps(zsys: f64, pol: Polarisation, dielect: f64, conduct: f64, prop: &mut Pr
     prop.gme = gma * (1.0 - 0.04665 * (prop.ens / 179.3).exp());
 
     let zq = Complex64::new(dielect, 376.62 * conduct / prop.wn);
-    let mut zgnd = (zq - 1.0).sqrt();
+    let zgnd = (zq - 1.0).sqrt();
 
-    if pol == Polarisation::Vertical {
-        zgnd = zgnd / zq;
-    }
-
-    prop.zgnd = zgnd;
+    prop.zgnd = match pol {
+        Polarisation::Horizontal => zgnd,
+        Polarisation::Vertical => zgnd / zq,
+    };
 }
 
 fn qlrpfl(
