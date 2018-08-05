@@ -129,14 +129,13 @@ fn qlrps(zsys: f64, pol: Polarisation, dielect: f64, conduct: f64, prop: &mut Pr
     prop.gme = gma * (1.0 - 0.04665 * (prop.ens / 179.3).exp());
 
     let zq = Complex64::new(dielect, 376.62 * conduct / prop.wn);
-    let mut prop_zgnd = (zq - 1.0).sqrt();
+    let mut zgnd = (zq - 1.0).sqrt();
 
     if pol == Polarisation::Vertical {
-        prop_zgnd = prop_zgnd / zq;
+        zgnd = zgnd / zq;
     }
 
-    prop.zgndreal = prop_zgnd.re;
-    prop.zgndimag = prop_zgnd.im;
+    prop.zgnd = zgnd;
 }
 
 fn qlrpfl(
@@ -436,8 +435,6 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
     let mut wlos: bool = false;
     let mut wscat: bool = false;
 
-    let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
-
     if prop.mdp != 0 {
         propa.dls.0 = (2.0 * prop.he.0 / prop.gme).sqrt();
         propa.dls.1 = (2.0 * prop.he.1 / prop.gme).sqrt();
@@ -479,7 +476,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             || (prop.ens > 400.0)
             || (prop.gme < 75e-9)
             || (prop.gme > 250e-9)
-            || (prop_zgnd.re <= prop_zgnd.im.abs())
+            || (prop.zgnd.re <= prop.zgnd.im.abs())
             || (prop.wn < 0.419)
             || (prop.wn > 420.0)
         {
@@ -626,8 +623,6 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
 }
 
 fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
-    let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
-
     // this is setting up data for iterations beyond the first (d=0 == first)
     // gotta figure out how to do this in rust...
     // ...without sharing data between *different* runs!
@@ -646,7 +641,7 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         q *= 0.78 * (-(q / 16.0).powf(0.25)).exp();
 
         let afo = 15.0f64.min(2.171 * (1.0 + 4.77e-4 * prop.hg.0 * prop.hg.1 * prop.wn * q).ln());
-        let qk = 1.0 / prop_zgnd.norm_sqr().sqrt();
+        let qk = 1.0 / prop.zgnd.norm_sqr().sqrt();
         let mut aht = 20.0;
         let mut xht = 0.0;
 
@@ -697,7 +692,6 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
 }
 
 fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
-    let prop_zgnd = Complex64::new(prop.zgndreal, prop.zgndimag);
     let mut wls = 0.0;
 
     // see adiff comment
@@ -709,7 +703,7 @@ fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let s = 0.78 * q * (-(q / 16.0).powf(0.25)).exp();
         q = prop.he.0 + prop.he.1;
         let sps = q / (d.powi(2) + q.powi(2)).sqrt();
-        let mut r = (sps - prop_zgnd) / (sps + prop_zgnd) * (-10.0f64.min(prop.wn * s * sps)).exp();
+        let mut r = (sps - prop.zgnd) / (sps + prop.zgnd) * (-10.0f64.min(prop.wn * s * sps)).exp();
         q = r.norm_sqr();
 
         if q < 0.25 || q < sps {
@@ -1215,8 +1209,6 @@ pub struct Prop {
     pub cd: f64,
     pub gme: f64,
     pub zgnd: Complex64,
-    pub zgndreal: f64,
-    pub zgndimag: f64,
     pub he: (f64, f64),
     pub dl: (f64, f64),
     pub the: (f64, f64),
