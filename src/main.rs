@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy_pedantic))]
 
-extern crate num_complex;
 extern crate gdal;
 extern crate geo;
+extern crate num_complex;
 
 use geo::Point;
 use itm::*;

@@ -855,17 +855,17 @@ fn ahd(td: f64) -> f64 {
     a[i] + b[i] * td + c[i] * td.ln()
 }
 
+const RT: f64 = 7.8;
+const RL: f64 = 24.0;
+
 fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64 {
-	// static	int kdv;
+	// static int kdv;
     // static bool ws, w1;
     let mut kdv = 0;
     let mut ws = false;
     let mut w1 = false;
 
-	// static	double dexa, de, vmd, vs0, sgl, sgtm, sgtp, sgtd, tgtd,
-	// 	gm, gp, cv1, cv2, yv1, yv2, yv3, csm1, csm2, ysm1, ysm2,
-	// 	ysm3, csp1, csp2, ysp1, ysp2, ysp3, csd1, zd, cfm1, cfm2,
-	// 	cfm3, cfp1, cfp2, cfp3;
+	// static double dexa, de, vs0, sgl, sgtm, sgtp, sgtd, tgtd
 	let mut dexa = 0.0;
     let mut de = 0.0;
     let mut vmd = 0.0;
@@ -875,86 +875,10 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     let mut sgtp = 0.0;
     let mut sgtd = 0.0;
     let mut tgtd = 0.0;
-	let mut gm = 0.0;
-    let mut gp = 0.0;
-    let mut zd = 0.0;
-    let cv1;
-    let cv2;
-    let yv1;
-    let yv2;
-    let yv3;
-    let csm1;
-    let csm2;
-    let ysm1;
-    let ysm2;
-	let ysm3;
-    let csp1;
-    let csp2;
-    let ysp1;
-    let ysp2;
-    let ysp3;
-    let csd1;
-    let cfm1;
-    let cfm2;
-	let cfm3;
-    let cfp1;
-    let cfp2;
-    let cfp3;
 
-	let bv1 = [-9.67,-0.62,1.26,-9.21,-0.62,-0.39,3.15];
-	let bv2 = [12.7,9.19,15.5,9.05,9.19,2.86,857.9];
-	let xv1 = [144.9e3,228.9e3,262.6e3,84.1e3,228.9e3,141.7e3,2222.0e3];
-	let xv2 = [190.3e3,205.2e3,185.2e3,101.1e3,205.2e3,315.9e3,164.8e3];
-	let xv3 = [133.8e3,143.6e3,99.8e3,98.6e3,143.6e3,167.4e3,116.3e3];
-	let bsm1 = [2.13,2.66,6.11,1.98,2.68,6.86,8.51];
-	let bsm2 = [159.5,7.67,6.65,13.11,7.16,10.38,169.8];
-	let xsm1 = [762.2e3,100.4e3,138.2e3,139.1e3,93.7e3,187.8e3,609.8e3];
-	let xsm2 = [123.6e3,172.5e3,242.2e3,132.7e3,186.8e3,169.6e3,119.9e3];
-	let xsm3 = [94.5e3,136.4e3,178.6e3,193.5e3,133.5e3,108.9e3,106.6e3];
-	let bsp1 = [2.11,6.87,10.08,3.68,4.75,8.58,8.43];
-	let bsp2 = [102.3,15.53,9.60,159.3,8.12,13.97,8.19];
-	let xsp1 = [636.9e3,138.7e3,165.3e3,464.4e3,93.2e3,216.0e3,136.2e3];
-	let xsp2 = [134.8e3,143.7e3,225.7e3,93.1e3,135.9e3,152.0e3,188.5e3];
-	let xsp3 = [95.6e3,98.6e3,129.7e3,94.2e3,113.4e3,122.7e3,122.9e3];
-	let bsd1 = [1.224,0.801,1.380,1.000,1.224,1.518,1.518];
-	let bzd1 = [1.282,2.161,1.282,20.,1.282,1.282,1.282];
-	let bfm1 = [1.0,1.0,1.0,1.0,0.92,1.0,1.0];
-	let bfm2 = [0.0,0.0,0.0,0.0,0.25,0.0,0.0];
-	let bfm3 = [0.0,0.0,0.0,0.0,1.77,0.0,0.0];
-	let bfp1 = [1.0,0.93,1.0,0.93,0.93,1.0,1.0];
-	let bfp2 = [0.0,0.31,0.0,0.19,0.31,0.0,0.0];
-	let bfp3 = [0.0,2.00,0.0,1.79,2.00,0.0,0.0];
-
-    let rt = 7.8;
-    let rl = 24.0;
-
-    let temp_klim = propv.klim as usize - 1;
+    let cc: ClimateConstants = propv.klim.into();
 
 	if propv.lvar > 0 {
-        cv1=bv1[temp_klim];
-		cv2=bv2[temp_klim];
-		yv1=xv1[temp_klim];
-		yv2=xv2[temp_klim];
-		yv3=xv3[temp_klim];
-		csm1=bsm1[temp_klim];
-		csm2=bsm2[temp_klim];
-		ysm1=xsm1[temp_klim];
-		ysm2=xsm2[temp_klim];
-		ysm3=xsm3[temp_klim];
-		csp1=bsp1[temp_klim];
-		csp2=bsp2[temp_klim];
-		ysp1=xsp1[temp_klim];
-		ysp2=xsp2[temp_klim];
-		ysp3=xsp3[temp_klim];
-		csd1=bsd1[temp_klim];
-		zd=bzd1[temp_klim];
-		cfm1=bfm1[temp_klim];
-		cfm2=bfm2[temp_klim];
-		cfm3=bfm3[temp_klim];
-		cfp1=bfp1[temp_klim];
-		cfp2=bfp2[temp_klim];
-		cfp3=bfp3[temp_klim];
-
 		match propv.lvar {
 			4 => {
     			kdv = propv.mdvar;
@@ -973,11 +897,6 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     				prop.kwx = prop.kwx.max(2);
     			}
             },
-			3 => {
-    			let q = (0.133 * prop.wn).ln();
-    			gm = cfm1 + cfm2 / ((cfm3 * q).powi(2) + 1.0);
-    			gp = cfp1 + cfp2 / ((cfp3 * q).powi(2) + 1.0);
-            },
 			2 => {
 		        dexa = (18e6 * prop.he.0).sqrt() + (18e6 * prop.he.1).sqrt()
                     + (575.7e12 / prop.wn).cbrt();
@@ -992,11 +911,12 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
             _ => {}
 		}
 
-		vmd = ltfade_reference_from_climate(cv1, cv2, yv1, yv2, yv3, de);
-		sgtm = ltfade_reference_from_climate(csm1, csm2, ysm1, ysm2, ysm3, de) * gm;
-		sgtp = ltfade_reference_from_climate(csp1, csp2, ysp1, ysp2, ysp3, de) * gp;
-		sgtd = sgtp * csd1;
-		tgtd = (sgtp - sgtd) * zd;
+        let refs = ltfade_references(cc, de, prop.wn);
+        vmd = refs.0;
+        sgtm = refs.1;
+        sgtp = refs.2;
+		sgtd = refs.3;
+		tgtd = refs.4;
 
 		sgl = if w1 {
 			0.0
@@ -1037,14 +957,14 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
 
 	let sgt = if zt < 0.0 {
 		sgtm
-    } else if zt <= zd {
+    } else if zt <= cc.zd {
 		sgtp
     } else {
 		sgtd + tgtd / zt
     };
 
-	let vs = vs0 + (sgt * zt).powi(2) / (rt + zzc * zzc)
-        + (sgl * zl).powi(2) / (rl + zzc * zzc);
+	let vs = vs0 + (sgt * zt).powi(2) / (RT + zzc * zzc)
+        + (sgl * zl).powi(2) / (RL + zzc * zzc);
 
 	let (yr, sgc) = match kdv {
         0 => {
@@ -1071,7 +991,23 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     }
 }
 
-/// Long-term fading reference value derivation based on climate curves.
+/// Computes long-term fading reference values from climate constants.
+fn ltfade_references(cc: ClimateConstants, de: f64, wn: f64) -> (f64, f64, f64, f64, f64) {
+	let q = (0.133 * wn).ln();
+	let gm = cc.bfm.0 + cc.bfm.1 / ((cc.bfm.2 * q).powi(2) + 1.0);
+	let gp = cc.bfp.0 + cc.bfp.1 / ((cc.bfp.2 * q).powi(2) + 1.0);
+
+    let vmd = ltfade_curve(cc.bv, cc.xv, de);
+    let sgtm = ltfade_curve(cc.bsm, cc.xsm, de) * gm;
+    let sgtp = ltfade_curve(cc.bsp, cc.xsp, de) * gp;
+
+    let sgtd = sgtp * cc.cd;
+	let tgtd = (sgtp - sgtd) * cc.zd;
+
+    (vmd, sgtm, sgtp, sgtd, tgtd)
+}
+
+/// Long-term fading climate curves.
 ///
 /// This function's only reference is in the FORTRAN source. No comment is given
 /// as to how it was derived, and whether the figure in the research are from
@@ -1084,18 +1020,152 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
 ///
 /// [TN101-I]: https://www.its.bldrdoc.gov/publications/2726.aspx
 /// [TN101-II]: https://www.its.bldrdoc.gov/publications/2727.aspx
-fn ltfade_reference_from_climate(c1: f64, c2: f64, x1: f64, x2: f64, x3: f64, de: f64) -> f64 {
-	(c1 + c2 / (1.0 + ((de - x2) / x3).powi(2)))
-        * (de / x1).powi(2) / (1.0 + (de / x1).powi(2))
+fn ltfade_curve(c: (f64, f64), x: (f64, f64, f64), de: f64) -> f64 {
+	(c.0 + c.1 / (1.0 + ((de - x.1) / x.2).powi(2)))
+        * (de / x.0).powi(2) / (1.0 + (de / x.0).powi(2))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct ClimateConstants {
+    pub name: Climate,
+
+    pub bv: (f64, f64),
+    pub xv: (f64, f64, f64),
+    pub bsm: (f64, f64),
+    pub xsm: (f64, f64, f64),
+    pub bsp: (f64, f64),
+    pub xsp: (f64, f64, f64),
+
+    /// CD (Table 5.1 of T.A.)
+    pub cd: f64,
+    /// ZD (Table 5.1 of T.A.)
+    pub zd: f64,
+
+    pub bfm: (f64, f64, f64),
+    pub bfp: (f64, f64, f64),
+}
+
+impl ClimateConstants {
+    fn new(
+        name: Climate,
+        bv1: f64, bv2: f64, xv1: f64, xv2: f64, xv3: f64,
+        bsm1: f64, bsm2: f64, xsm1: f64, xsm2: f64, xsm3: f64,
+        bsp1: f64, bsp2: f64, xsp1: f64, xsp2: f64, xsp3: f64,
+        cd: f64, zd: f64,
+        bfm1: f64, bfm2: f64, bfm3: f64,
+        bfp1: f64, bfp2: f64, bfp3: f64
+    ) -> Self {
+        Self {
+            name,
+            bv: (bv1, bv2),
+            xv: (xv1, xv2, xv3),
+            bsm: (bsm1, bsm2),
+            xsm: (xsm1, xsm2, xsm3),
+            bsp: (bsp1, bsp2),
+            xsp: (xsp1, xsp2, xsp3),
+            cd,
+            zd,
+            bfm: (bfm1, bfm2, bfm3),
+            bfp: (bfp1, bfp2, bfp3)
+        }
+    }
+}
+
+impl From<Climate> for ClimateConstants {
+    fn from(climate: Climate) -> Self {
+        match climate {
+            name @ Climate::Equatorial => Self::new(
+                name,
+                -9.67, 12.7, 144.9e3, 190.3e3, 133.8e3,
+                2.13, 159.5, 762.2e3, 123.6e3, 94.5e3,
+                2.11, 102.3, 636.9e3, 134.8e3, 95.6e3,
+                1.224, 1.282,
+                1.0, 0.0, 0.0,
+                1.0, 0.0, 0.0
+            ),
+            name @ Climate::ContinentalSubtropical => Self::new(
+                name,
+                -0.62, 9.19, 228.9e3, 205.2e3, 143.6e3,
+                2.66, 7.67, 100.4e3, 172.5e3, 136.4e3,
+                6.87, 15.53, 138.7e3, 143.7e3, 98.6e3,
+                0.801, 2.161,
+                1.0, 0.0, 0.0,
+                0.93, 0.31, 2.00
+            ),
+            name @ Climate::MaritimeSubtropical => Self::new(
+                name,
+                1.26, 15.5, 262.6e3, 185.2e3, 99.8e3,
+                6.11, 6.65, 138.2e3, 242.2e3, 178.6e3,
+                10.08, 9.60, 165.3e3, 225.7e3, 129.7e3,
+                1.380, 1.282,
+                1.0, 0.0, 0.0,
+                1.0, 0.0, 0.0
+            ),
+            name @ Climate::Desert => Self::new(
+                name,
+                -9.21, 9.05, 84.1e3, 101.1e3, 98.6e3,
+                1.98, 13.11, 139.1e3, 132.7e3, 193.5e3,
+                3.68, 159.3, 464.4e3, 93.1e3, 94.2e3,
+                1.000, 20.0,
+                1.0, 0.0, 0.0,
+                0.93, 0.19, 1.79
+            ),
+            name @ Climate::ContinentalTemperate => Self::new(
+                name,
+                -0.62, 9.19, 228.9e3, 205.2e3, 143.6e3,
+                2.68, 7.16, 93.7e3, 186.8e3, 133.5e3,
+                4.75, 8.12, 93.2e3, 135.9e3, 113.4e3,
+                1.224, 1.282,
+                0.92, 0.25, 1.77,
+                0.93, 0.31, 2.00
+            ),
+            name @ Climate::MaritimeTemperateOverLand => Self::new(
+                name,
+                -0.39, 2.86, 141.7e3, 315.9e3, 167.4e3,
+                6.86, 10.38, 187.8e3, 169.6e3, 108.9e3,
+                8.58, 13.97, 216.0e3, 152.0e3, 122.7e3,
+                1.518, 1.282,
+                1.0, 0.0, 0.0,
+                1.0, 0.0, 0.0
+            ),
+            name @ Climate::MaritimeTemperateOverSea => Self::new(
+                name,
+                3.15, 857.9, 2222.0e3, 164.8e3, 116.3e3,
+                8.51, 169.8, 609.8e3, 119.9e3, 106.6e3,
+                8.43, 8.19, 136.2e3, 188.5e3, 122.9e3,
+                1.518, 1.282,
+                1.0, 0.0, 0.0,
+                1.0, 0.0, 0.0
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub enum Climate {
+    Equatorial = 1,
+    ContinentalSubtropical = 2,
+    MaritimeSubtropical = 3,
+    Desert = 4,
+    ContinentalTemperate = 5,
+    MaritimeTemperateOverLand = 6,
+    MaritimeTemperateOverSea = 7,
+}
+
+impl Default for Climate {
+    fn default() -> Self {
+        Climate::ContinentalTemperate
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
  pub struct Prop {
     pub aref: f64,
 	pub dist: f64,
 
     /// Heights (tx, rx)
 	pub hg: (f64, f64),
+
 	pub rch: (f64, f64),
 	pub wn: f64,
 	pub dh: f64,
@@ -1105,6 +1175,7 @@ fn ltfade_reference_from_climate(c1: f64, c2: f64, x1: f64, x2: f64, x3: f64, de
 	pub cch: f64,
 	pub cd: f64,
 	pub gme: f64,
+	pub zgnd: Complex64,
 	pub zgndreal: f64,
 	pub zgndimag: f64,
 	pub he: (f64, f64),
@@ -1149,23 +1220,6 @@ pub struct PropA {
     pub dls: (f64, f64),
     pub dla: f64,
     pub tha: f64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub enum Climate {
-    Equatorial = 1,
-    ContinentalSubtropical = 2,
-    MaritimeSubtropical = 3,
-    Desert = 4,
-    ContinentalTemperate = 5,
-    MaritimeTemperateOverLand = 6,
-    MaritimeTemperateOverSea = 7,
-}
-
-impl Default for Climate {
-    fn default() -> Self {
-        Climate::ContinentalTemperate
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
