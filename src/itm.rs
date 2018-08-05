@@ -69,7 +69,6 @@ pub fn point_to_point(
     qlrpfl(
         distance,
         elevations,
-        climate,
         propv.mdvar,
         &mut prop,
         &mut propa,
@@ -140,7 +139,6 @@ fn qlrps(zsys: f64, pol: Polarisation, dielect: f64, conduct: f64, prop: &mut Pr
 fn qlrpfl(
     distance: f64,
     elevations: &Vec<f64>,
-    klimx: Climate,
     mdvarx: isize,
     mut prop: &mut Prop,
     propa: &mut PropA,
@@ -230,7 +228,6 @@ fn qlrpfl(
         propv.lvar = propv.lvar.max(4);
     }
 
-    propv.klim = klimx;
     propv.lvar = 5;
 
     lrprop(0.0, prop, propa);
