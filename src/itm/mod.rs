@@ -449,7 +449,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             prop.kwx = prop.kwx.max(1);
         }
 
-        fn make_kwx_hg(kwx: isize, hg: f64) -> isize {
+        fn make_kwx_hg(kwx: usize, hg: f64) -> usize {
             if hg < 1.0 || hg > 1000.0 {
                 kwx.max(1)
             } else {
@@ -460,7 +460,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         prop.kwx = make_kwx_hg(prop.kwx, prop.hg.0);
         prop.kwx = make_kwx_hg(prop.kwx, prop.hg.1);
 
-        fn make_kwx_dl(kwx: isize, the: f64, dl: f64, dls: f64) -> isize {
+        fn make_kwx_dl(kwx: usize, the: f64, dl: f64, dls: f64) -> usize {
             if (the.abs() > 200e-3) || (dl < 0.1 * dls) || (dl > 3.0 * dls) {
                 kwx.max(3)
             } else {
@@ -482,7 +482,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             prop.kwx = 4; // fail here
         }
 
-        fn make_kwx_hg_again(kwx: isize, hg: f64) -> isize {
+        fn make_kwx_hg_again(kwx: usize, hg: f64) -> usize {
             if hg < 0.5 || hg > 3000.0 {
                 4 // fail here
             } else {
@@ -994,25 +994,47 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Prop {
+    /// Reference attenuation
     pub aref: f64,
+
+    /// Distance from tx to rx
     pub dist: f64,
 
-    /// Heights (tx, rx)
+    /// Antenna structural heights (tx, rx)
     pub hg: (f64, f64),
 
     pub rch: (f64, f64),
+
+    /// Wave number (radio frequency)
     pub wn: f64,
+
+    /// Terrain irregularity parameter
     pub dh: f64,
+
     pub dhd: f64,
+
+    /// Surface refractivity
     pub ens: f64,
+
     pub encc: f64,
     pub cch: f64,
     pub cd: f64,
+
+    /// Earth's effective curvature
     pub gme: f64,
+
+    /// Surface transfer impedance to the ground
     pub zgnd: Complex64,
+
+    /// Antenna effective heights (tx, rx)
     pub he: (f64, f64),
+
+    /// Horizon distances (tx, rx)
     pub dl: (f64, f64),
+
+    /// Horizon elevation angles (tx, rx)
     pub the: (f64, f64),
+
     pub tiw: f64,
     pub ght: f64,
     pub ghr: f64,
@@ -1024,8 +1046,13 @@ pub struct Prop {
     pub thera: f64,
     pub thenr: f64,
     pub rpl: isize,
-    pub kwx: isize,
+
+    /// Error indicator
+    pub kwx: usize,
+
+    /// Controlling mode
     pub mdp: isize,
+
     pub ptx: isize,
     pub los: isize,
 }
@@ -1038,19 +1065,43 @@ pub struct PropV {
     pub klim: Climate,
 }
 
+/// Secondary parameters computed in LRProp.
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct PropA {
+    /// Line of sight distance
     pub dlsa: f64,
+
+    /// Scatter distance
     pub dx: f64,
+
+    /// Line of sight coefficient L
     pub ael: f64,
+
+    /// Line of sight coefficient 1
     pub ak1: f64,
+
+    /// Line of sight coefficient 2
     pub ak2: f64,
+
+    /// Diffraction coefficient 1
     pub aed: f64,
+
+    /// Diffraction coefficient 2
     pub emd: f64,
+
+    /// Scatter coefficient 1
     pub aes: f64,
+
+    /// Scatter coefficient 2
     pub ems: f64,
+
+    /// Smooth earth horizon distances (tx, rx)
     pub dls: (f64, f64),
+
+    /// Total horizon distance
     pub dla: f64,
+
+    /// Total bending angle
     pub tha: f64,
 }
 
