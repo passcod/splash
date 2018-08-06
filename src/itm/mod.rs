@@ -32,11 +32,50 @@ use num_complex::Complex64;
 
 pub mod climate;
 
+/// Propagation model instance.
+///
+/// Holds all state related to one instance of the Irregular Terrain Model, for
+/// one particular transmitter, elevation profile from the transmitter outwards,
+/// and set of options.
+///
+/// A `Model` instance can be used to query propagation at any distance from the
+/// transmitter along the loaded elevation profile. All preliminary work is done
+/// on initialisation: propagation queries only need immutable access and can
+/// therefore be done concurrently.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Model {
+    distance: f64,
+    elevations: Vec<f64>,
+    computed: Option<Computed>,
+    cached: Option<Cached>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Computed {}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Cached {}
+
+impl Model {
+    pub fn new(distance: f64, elevations: Vec<f64>) -> Result<Self, ()> {
+        let model = Self { distance, elevations, computed: None, cached: None };
+        Err(())
+    }
+
+    pub fn attenuation_at(&self, distance_from_tx: f64) -> Result<f64, String> {
+        if distance_from_tx < 0.0 {
+            return Err("distance negative".into())
+        }
+
+        if distance_from_tx > self.distance {
+            return Err("distance above bounds".into());
+        }
+
+        Err("not implemented".into())
+    }
+}
+
 /// Point-to-Point propagation
-///
-/// ## Errors
-///
-/// The function errors if any parameter is out of range, but doesn't say how.
 pub fn point_to_point(
     distance: f64,
     elevations: &Vec<f64>,
