@@ -55,7 +55,6 @@ pub fn point_to_point(
 
     let mut prop = Prop::default();
     prop.hg = (tx_height, rx_height);
-    prop.mdp = -1;
     prop.ens = surfref;
     prop.wn = freq / 47.7;
 
@@ -223,7 +222,7 @@ fn qlrpfl(
         );
     }
 
-    prop.mdp = -1;
+    prop.mode = Mode::PointToPoint;
     propv.lvar = propv.lvar.max(3);
 
     if mdvarx >= 0 {
@@ -434,7 +433,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
     let mut wlos: bool = false;
     let mut wscat: bool = false;
 
-    if prop.mdp != 0 {
+    if prop.mode == Mode::PointToPoint || prop.area_setup_done {
         propa.dls.0 = (2.0 * prop.he.0 / prop.gme).sqrt();
         propa.dls.1 = (2.0 * prop.he.1 / prop.gme).sqrt();
 
@@ -504,8 +503,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         propa.aed = a3 - propa.emd * d3;
     }
 
-    if prop.mdp >= 0 {
-        prop.mdp = 0;
+    if prop.mode == Mode::Area {
         prop.dist = d;
     }
 
@@ -629,7 +627,7 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let mut q = prop.hg.1 * prop.hg.1;
         let qk = prop.he.0 * prop.he.1 - q;
 
-        if prop.mdp < 0 {
+        if prop.mode == Mode::PointToPoint {
             q += 10.0;
         }
 
@@ -1050,8 +1048,11 @@ pub struct Prop {
     /// Error indicator
     pub kwx: usize,
 
-    /// Controlling mode
-    pub mdp: isize,
+    /// Controlling mode.
+    pub mode: Mode,
+
+    /// Whether initial setup has been done for area mode.
+    pub area_setup_done: bool,
 
     pub ptx: isize,
     pub los: isize,
@@ -1114,5 +1115,17 @@ pub enum Polarisation {
 impl Default for Polarisation {
     fn default() -> Self {
         Polarisation::Horizontal
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub enum Mode {
+    PointToPoint,
+    Area,
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::PointToPoint
     }
 }
