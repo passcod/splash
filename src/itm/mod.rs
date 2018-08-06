@@ -426,12 +426,6 @@ fn qtile(nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
 }
 
 fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
-    // these 4 are cpp statics too
-    let mut dmin: f64 = 0.0;
-    let mut xae: f64 = 0.0;
-    let mut wlos: bool = false;
-    let mut wscat: bool = false;
-
     if !prop.setup_done {
         propa.dls.0 = (2.0 * prop.he.0 / prop.gme).sqrt();
         propa.dls.1 = (2.0 * prop.he.1 / prop.gme).sqrt();
@@ -439,9 +433,6 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         propa.dlsa = propa.dls.0 + propa.dls.1;
         propa.dla = prop.dl.0 + prop.dl.1;
         propa.tha = (prop.the.0 + prop.the.1).max(-propa.dla * prop.gme);
-
-        wlos = false;
-        wscat = false;
 
         if prop.wn < 0.838 || prop.wn > 210.0 {
             prop.kwx = prop.kwx.max(1);
@@ -491,11 +482,11 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.0);
         prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.1);
 
-        dmin = (prop.he.0 - prop.he.1).abs() / 200e-3;
+        prop.dmin = (prop.he.0 - prop.he.1).abs() / 200e-3;
         adiff(0.0, prop, propa);
-        xae = (prop.wn * prop.gme.powi(2)).cbrt();
-        let d3 = propa.dlsa.max(1.3787 * xae + propa.dla);
-        let d4 = d3 + 2.7574 * xae;
+        prop.xae = (prop.wn * prop.gme.powi(2)).cbrt();
+        let d3 = propa.dlsa.max(1.3787 * prop.xae + propa.dla);
+        let d4 = d3 + 2.7574 * prop.xae;
         let a3 = adiff(d3, prop, propa);
         let a4 = adiff(d4, prop, propa);
         propa.emd = (a4 - a3) / (d4 - d3);
@@ -509,7 +500,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             prop.kwx = prop.kwx.max(1);
         }
 
-        if prop.dist < dmin {
+        if prop.dist < prop.dmin {
             prop.kwx = prop.kwx.max(3);
         }
 
@@ -519,7 +510,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
     }
 
     if prop.dist < propa.dlsa {
-        if !wlos {
+        if !prop.wlos {
             alos(0.0, prop, propa);
             let d2 = propa.dlsa;
             let a2 = propa.aed + d2 * propa.emd;
@@ -574,7 +565,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             }
 
             propa.ael = a2 - propa.ak1 * d2 - propa.ak2 * d2.ln();
-            wlos = true;
+            prop.wlos = true;
         }
 
         if prop.dist > 0.0 {
@@ -583,7 +574,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
     }
 
     if prop.dist <= 0.0 || prop.dist >= propa.dlsa {
-        if !wscat {
+        if !prop.wscat {
             ascat(0.0, prop, propa);
             let d5 = propa.dla + 200e3;
             let d6 = d5 + 200e3;
@@ -593,7 +584,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
             if a5 < 1000.0 {
                 propa.ems = (a6 - a5) / 200e3;
                 propa.dx = propa.dlsa.max(
-                    (propa.dla + 0.3 * xae * (47.7 * prop.wn).ln())
+                    (propa.dla + 0.3 * prop.xae * (47.7 * prop.wn).ln())
                         .max((a5 - propa.aed - propa.ems * d5) / (propa.emd - propa.ems)),
                 );
                 propa.aes = (propa.emd - propa.ems) * propa.dx + propa.aed;
@@ -603,7 +594,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
                 propa.dx = 10.0e6;
             }
 
-            wscat = true;
+            prop.wscat = true;
         }
 
         if prop.dist > propa.dx {
@@ -721,28 +712,23 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     // double h0, r1, r2, z0, ss, et, ett, th, q;
     // double ascatv, temp;
 
-    let ad = 0.0;
-    let rr = 0.0;
-    let mut etq = 0.0;
-    let mut h0s = 0.0;
-
     // see adiff comment
     if d == 0.0 {
-        let mut ad = prop.dl.0 - prop.dl.1;
-        let mut rr = prop.he.1 / prop.rch.0;
+        prop.ad = prop.dl.0 - prop.dl.1;
+        prop.rr = prop.he.1 / prop.rch.0;
 
-        if ad < 0.0 {
-            ad = -ad;
-            rr = 1.0 / rr;
+        if prop.ad < 0.0 {
+            prop.ad = -prop.ad;
+            prop.rr = 1.0 / prop.rr;
         }
 
-        etq = (5.67e-6 * prop.ens - 2.32e-3) * prop.ens + 0.031;
-        h0s = -15.0;
+        prop.etq = (5.67e-6 * prop.ens - 2.32e-3) * prop.ens + 0.031;
+        prop.h0s = -15.0;
         0.0
     } else {
         let mut h0;
-        if h0s > 15.0 {
-            h0 = h0s;
+        if prop.h0s > 15.0 {
+            h0 = prop.h0s;
         } else {
             let th = prop.the.0 + prop.the.1 + d * prop.gme;
             let mut r2 = 2.0 * prop.wn * th;
@@ -753,14 +739,14 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
                 return 1001.0;
             }
 
-            let mut ss = (d - ad) / (d + ad);
-            let mut q = rr / ss;
+            let mut ss = (d - prop.ad) / (d + prop.ad);
+            let mut q = prop.rr / ss;
             ss = ss.max(0.1);
             q = q.max(0.1).min(10.0);
-            let z0 = (d - ad) * (d + ad) * th * 0.25 / d;
+            let z0 = (d - prop.ad) * (d + prop.ad) * th * 0.25 / d;
 
             let temp = (z0 / 8.0e3).min(1.7).powi(6);
-            let et = (etq * (-temp).exp() + 1.0) * z0 / 1.7556e3;
+            let et = (prop.etq * (-temp).exp() + 1.0) * z0 / 1.7556e3;
 
             let ett = et.max(1.0);
             h0 = (h0f(r1, ett) + h0f(r2, ett)) * 0.5;
@@ -773,12 +759,12 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
                     + (1.0 - et) * 4.343 * (temp.powi(2) * (r1 + r2) / (r1 + r2 + 2.8284)).ln();
             }
 
-            if h0 > 15.0 && h0s >= 0.0 {
-                h0 = h0s;
+            if h0 > 15.0 && prop.h0s >= 0.0 {
+                h0 = prop.h0s;
             }
         }
 
-        h0s = h0;
+        prop.h0s = h0;
         let th = propa.tha + d * prop.gme;
         ahd(th * d) + 4.343 * (47.7 * prop.wn * th.powi(4)).ln()
             - 0.1 * (prop.ens - 301.0) * (-th * d / 40e3).exp() + h0
@@ -1054,6 +1040,18 @@ pub struct Prop {
 
     pub ptx: isize,
     pub los: isize,
+
+    // statics below
+
+    pub dmin: f64,
+    pub xae: f64,
+    pub wlos: bool,
+    pub wscat: bool,
+
+    pub ad: f64,
+    pub rr: f64,
+    pub etq: f64,
+    pub h0s: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
