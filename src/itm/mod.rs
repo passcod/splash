@@ -42,24 +42,274 @@ pub mod climate;
 /// transmitter along the loaded elevation profile. All preliminary work is done
 /// on initialisation: propagation queries only need immutable access and can
 /// therefore be done concurrently.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Model {
-    distance: f64,
-    elevations: Vec<f64>,
-    computed: Option<Computed>,
-    cached: Option<Cached>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct Model<'a> {
+    length: f64,
+    elevations: &'a Vec<f64>,
+    heights: (f64, f64),
+    settings: &'a Settings,
+    computed: Computed,
+    cached: Cached,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Computed {}
+pub struct Computed {
+    pub wave_number: f64,
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Cached {}
+    /// General elevation: the mean elevation of the modeled system.
+    pub general_elevation: f64,
 
-impl Model {
-    pub fn new(distance: f64, elevations: Vec<f64>) -> Result<Self, ()> {
-        let model = Self { distance, elevations, computed: None, cached: None };
-        Err(())
+    /// Earth's effective curvature at the system's elevation.
+    pub effective_curvature: f64, // gme
+
+    /// Effective surface refractivity at the system's elevation.
+    pub effective_refractivity: f64,
+
+    /// Surface transfer impedance to the ground.
+    pub transfer_impedance: Complex64,
+
+    /// Interval distance between each elevation.
+    pub interval: f64,
+
+    /// Elevation angles of the horizons from each terminal at the heights of
+    /// the antennas, in radians.
+    pub elevation_angles: (f64, f64), // the
+
+    /// Distances from each terminal to its radio horizon.
+    pub horizon_distances: (f64, f64), // dl
+
+    /// Terminal effective heights: adjusted against horizons (or obstructions).
+    pub effective_heights: (f64, f64), // he
+
+    pub terrain_irregularity: f64, // dh
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cached {
+    pub lvar: isize,
+    pub mdvar: isize,
+
+    pub dmin: f64,
+    pub xae: f64,
+    pub wlos: bool,
+    pub wscat: bool,
+
+    pub ad: f64,
+    pub rr: f64,
+    pub etq: f64,
+    pub h0s: f64,
+}
+
+impl Default for Cached {
+    fn default() -> Self {
+        Self {
+            lvar: 5,
+            mdvar: 12,
+
+            dmin: 0.0,
+            xae: 0.0,
+            wlos: false,
+            wscat: false,
+
+            ad: 0.0,
+            rr: 0.0,
+            etq: 0.0,
+            h0s: 0.0,
+        }
+    }
+}
+
+const ABSOLUTE_CURVATURE: f64 = 157e-9;
+
+impl<'a> Model<'a> {
+    /// Creates a new instance for a profile.
+    ///
+    ///  - `length` and `elevations` are the terrain input. We assume elevations
+    ///    are along a line of length `length` metres, spaced equidistantly, and
+    ///    that the transmitter is at distance zero. // prop.dist
+    ///
+    ///  - `heights` is a tuple of the _height above ground_ in metres of the
+    ///    terminals (antennas), transmitter then receiver. // hg
+    ///
+    ///  - `settings` is an instance of the `Settings` struct, containing
+    ///    atmospheric, surface, radio, and statistical parameter values.
+    pub fn new(length: f64, elevations: &'a Vec<f64>, heights: (f64, f64), settings: &'a Settings) -> Result<Self, String> {
+        if elevations.len() < 3 {
+            return Err("elevations should have more than 2 points".into());
+        }
+
+        if heights.0 < 0.0 || heights.1 < 0.0 {
+            return Err("heights may not be negative".into());
+        }
+
+        let cached = Cached::default();
+        let computed = Computed::default();
+        let mut model = Self { length, elevations, heights, settings, computed, cached };
+
+        model.prepare_environment();
+        model.find_horizons();
+        // mdvar, lvar ???
+        model.adjust_horizons();
+        // lrprop(0.0, prop, propa);
+
+        Ok(model)
+    }
+
+    fn prepare_environment(&mut self) {
+        self.computed.wave_number = self.settings.frequency / 47.7;
+
+        let sum: f64 = self.elevations.iter().sum();
+        self.computed.general_elevation = sum / (self.elevations.len() as f64);
+
+        self.computed.effective_refractivity = self.settings.surface_refractivity;
+        if self.computed.general_elevation != 0.0 {
+            self.computed.effective_refractivity *= (-self.computed.general_elevation / 9460.0).exp();
+        }
+
+        self.computed.effective_curvature = ABSOLUTE_CURVATURE *
+            (1.0 - 0.04665 * (self.computed.effective_refractivity / 179.3).exp());
+
+        let intermediate = Complex64::new(
+            self.settings.dielectric,
+            376.62 * self.settings.conductivity / self.computed.wave_number
+        );
+        self.computed.transfer_impedance = (intermediate - 1.0).sqrt();
+
+        if self.settings.polarisation == Polarisation::Vertical {
+            self.computed.transfer_impedance /= intermediate;
+        }
+    }
+
+    fn find_horizons(&mut self) {
+        let len = self.elevations.len();
+        let interval = self.length / (len - 1) as f64;
+        self.computed.interval = interval;
+
+        let tx_z = self.elevations[0] + self.heights.0;
+        let rx_z = self.elevations[len - 1] + self.heights.1;
+
+        let half_curve = self.computed.effective_curvature / 2.0;
+        let half_length = half_curve * self.length;
+
+        let vertical_delta = (rx_z - tx_z) / self.length;
+        let mut angle_tx = vertical_delta - half_length;
+        let mut angle_rx = -vertical_delta - half_length;
+
+        let mut dist_tx = self.length;
+        let mut dist_rx = self.length;
+
+        let mut along_tx = 0.0;
+        let mut along_rx = self.length;
+
+        let mut wq = true;
+
+        // We advance along the elevation profile looking both from the TX and
+        // from the RX at the same time. As we go we adjust the elevations to
+        // the Earth's curvature.
+
+        for i in 1..len {
+            along_tx += interval;
+            along_rx -= interval;
+
+            let tx_adj = half_curve * along_tx + angle_tx;
+            let tx_delta = self.elevations[i] - tx_adj * along_tx - tx_z;
+
+            if tx_delta > 0.0 {
+                angle_tx += half_length / along_tx;
+                dist_tx = along_tx;
+                wq = false;
+            }
+
+            if wq { continue; }
+
+            let rx_adj = half_curve * along_rx + angle_rx;
+            let rx_delta = self.elevations[i] - rx_adj * along_rx - rx_z;
+
+            if rx_delta > 0.0 {
+                angle_rx += half_length / along_rx;
+                dist_rx = along_rx;
+            }
+        }
+
+        self.computed.elevation_angles = (angle_tx, angle_rx);
+        self.computed.horizon_distances = (dist_tx, dist_rx);
+    }
+
+    fn adjust_horizons(&mut self) {
+        fn make_xl(h: f64, horiz_dist: f64) -> f64 {
+            (15.0 * h).min(0.1 * horiz_dist)
+        }
+
+        let mut q;
+        let z;
+        let mut xl = (
+            make_xl(self.heights.0, self.computed.horizon_distances.0),
+            make_xl(self.heights.1, self.computed.horizon_distances.1)
+        );
+
+        xl.1 = self.length - xl.1;
+        self.computed.terrain_irregularity = d1thx(self.computed.interval, self.elevations, xl);
+
+        if self.computed.horizon_distances.0 + self.computed.horizon_distances.1 > 1.5 * self.length {
+            let (_, nz) = z1sq1(self.computed.interval, self.elevations, xl);
+            z = nz;
+            self.computed.effective_heights = ( // he = effective_heights
+                self.heights.0 + fortran_dim(self.elevations[0], z.0),
+                self.heights.1 + fortran_dim(self.elevations[self.elevations.len()], z.1),
+            );
+
+            fn make_dl(h: f64, curv: f64, terrain: f64) -> f64 {
+                // curv = gme = effective_curvature
+                (2.0 * h / curv).sqrt() * (-0.07 * (terrain / h.max(5.0)).sqrt()).exp()
+            }
+
+            self.computed.horizon_distances = ( // dl = horizon_distances
+                make_dl(self.computed.effective_heights.0, self.computed.effective_curvature, self.computed.terrain_irregularity),
+                make_dl(self.computed.effective_heights.1, self.computed.effective_curvature, self.computed.terrain_irregularity),
+            );
+
+            q = self.computed.horizon_distances.0 + self.computed.horizon_distances.1;
+
+            if q <= self.length {
+                /* if there is a rounded horizon, or two obstructions, in the path */
+                q = (self.length / q).powi(2);
+
+                fn make_hedl(q: f64, he: f64, curv: f64, terrain: f64) -> (f64, f64) {
+                    let he = he * q; /* tx effective height set to be path dist/self.computed.interval between obstacles */
+                    (
+                        he,
+                        (2.0 * he / curv).sqrt() * (-0.07 * (terrain / he.max(5.0)).sqrt()).exp(),
+                    )
+                }
+
+                let hedl = (
+                    make_hedl(q, self.computed.effective_heights.0, self.computed.effective_curvature, self.computed.terrain_irregularity),
+                    make_hedl(q, self.computed.effective_heights.1, self.computed.effective_curvature, self.computed.terrain_irregularity),
+                );
+
+                self.computed.effective_heights = ((hedl.0).0, (hedl.1).0); // he
+                self.computed.horizon_distances = ((hedl.0).1, (hedl.1).1); // dl
+            }
+
+            /* original empirical adjustment?  uses delta-h to adjust grazing angles */
+            fn make_qthe(he: f64, curv: f64, terrain: f64, horiz_dist: f64) -> f64 {
+                let q = (2.0 * he / curv).sqrt();
+                (0.65 * terrain * (q / horiz_dist - 1.0) - 2.0 * he) / q
+            }
+
+            self.computed.elevation_angles = ( // the
+                make_qthe(self.computed.effective_heights.0, self.computed.effective_curvature, self.computed.terrain_irregularity, self.computed.horizon_distances.0),
+                make_qthe(self.computed.effective_heights.1, self.computed.effective_curvature, self.computed.terrain_irregularity, self.computed.horizon_distances.1),
+            );
+        } else {
+            let (_, (z0, _)) = z1sq1(self.computed.interval, self.elevations, (xl.0, 0.9 * self.computed.horizon_distances.0));
+            let (_, (_, z1)) = z1sq1(self.computed.interval, self.elevations, (self.length - 0.9 * self.computed.horizon_distances.1, xl.1));
+
+            self.computed.effective_heights = (
+                self.heights.0 + fortran_dim(self.elevations[0], z0),
+                self.heights.1 + fortran_dim(self.elevations[self.elevations.len() - 1], z1),
+            );
+        }
     }
 
     pub fn attenuation_at(&self, distance_from_tx: f64) -> Result<f64, String> {
@@ -67,7 +317,7 @@ impl Model {
             return Err("distance negative".into())
         }
 
-        if distance_from_tx > self.distance {
+        if distance_from_tx > self.length {
             return Err("distance above bounds".into());
         }
 
@@ -75,9 +325,21 @@ impl Model {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Settings {
+    dielectric: f64,
+    conductivity: f64,
+    climate: Climate,
+    surface_refractivity: f64,
+    frequency: f64,
+    polarisation: Polarisation,
+    conf: f64,
+    rel: f64,
+}
+
 /// Point-to-Point propagation
 pub fn point_to_point(
-    distance: f64,
+    distance: f64, // actually the interval
     elevations: &Vec<f64>,
     tx_height: f64,
     rx_height: f64,
