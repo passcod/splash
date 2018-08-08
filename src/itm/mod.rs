@@ -30,8 +30,10 @@
 
 use climate::{Climate, ClimateConstants};
 use num_complex::Complex64;
+use utils::*;
 
 pub mod climate;
+pub mod utils;
 
 /// Propagation model instance.
 ///
@@ -211,8 +213,8 @@ impl<'a> Model<'a> {
         }
 
         // Fig/1.3 in T.A.
-        self.computed.effective_curvature = 157e-9
-            * (1.0 - 0.04665 * (self.computed.effective_refractivity / 179.3).exp());
+        self.computed.effective_curvature =
+            157e-9 * (1.0 - 0.04665 * (self.computed.effective_refractivity / 179.3).exp());
 
         // Fig/1.5 in T.A.
         let complex_relative_permittivity = Complex64::new(
@@ -322,8 +324,9 @@ impl<'a> Model<'a> {
         let mut q;
         let z;
 
-        if self.computed.horizon_distances.0 + self.computed.horizon_distances.1 > 1.5 * self.length {
-            // Redo light-of-sight horizons <45>
+        if self.computed.horizon_distances.0 + self.computed.horizon_distances.1 > 1.5 * self.length
+        {
+            // Redo light-of-sight horizons <45> if the path is line-of-sight
 
             let (_, nz) = z1sq1(self.computed.interval, self.elevations, xl);
             z = nz;
@@ -451,25 +454,25 @@ impl<'a> Model<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Settings {
     /// Relative permittivity of the ground (aka "dielectric constant").
-    permittivity: f64,
+    pub permittivity: f64,
 
     /// Relative conductivity of the ground (in siemens per metre).
-    conductivity: f64,
+    pub conductivity: f64,
 
     /// Type of climate.
-    climate: Climate,
+    pub climate: Climate,
 
     /// Surface refractivity reduced to sea level.
-    surface_refractivity: f64,
+    pub surface_refractivity: f64,
 
     /// Frequency of modeled wave (MHz).
-    frequency: f64,
+    pub frequency: f64,
 
     /// Polarisation of modeled wave.
-    polarisation: Polarisation,
+    pub polarisation: Polarisation,
 
-    conf: f64,
-    rel: f64,
+    pub conf: f64,
+    pub rel: f64,
 }
 
 /// Point-to-Point propagation
@@ -714,6 +717,7 @@ fn hzns(distance: f64, elevations: &Vec<f64>, prop: &mut Prop) {
     }
 }
 
+// <48>
 fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
     let np = elevations.len();
     let mut xa = xl.0 / distance;
@@ -757,43 +761,8 @@ fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
     d1thxv / (1.0 - 0.8 * (-(xl.1 - xl.0) / 50.0e3).exp())
 }
 
-fn z1sq1(distance: f64, elevations: &Vec<f64>, x: (f64, f64)) -> ((f64, f64), (f64, f64)) {
-    let xn = elevations.len() as f64;
-    let mut xa = fortran_dim(x.0 / distance, 0.0) as isize as f64;
-    let mut xb = xn - (fortran_dim(xn, x.1 / distance) as isize as f64);
-
-    if xb <= xa {
-        xa = fortran_dim(xa, 1.0);
-        xb = xn - fortran_dim(xn, xb + 1.0);
-    }
-
-    let mut ja = xa as usize;
-    let jb = xb as usize;
-
-    let n = jb - ja;
-    xa = xb - xa;
-
-    let mut xx = -0.5 * xa;
-    xb += xx;
-
-    let mut a = 0.5 * (elevations[ja] + elevations[jb]);
-    let mut b = 0.5 * (elevations[ja] - elevations[jb]) * xx;
-
-    for _ in 2..=n {
-        ja += 1;
-        xx += 1.0;
-        a += elevations[ja];
-        b += elevations[ja] * xx;
-    }
-
-    a /= xa;
-    b = b * 12.0 / ((xa * xa + 2.0) * xa);
-
-    (x, (a - b * xb, a + b * (xn - xb)))
-}
-
-fn fortran_dim(x: f64, y: f64) -> f64 {
-    (x - y).max(0.0)
+fn z1sq1(interval: f64, elevations: &Vec<f64>, x: (f64, f64)) -> ((f64, f64), (f64, f64)) {
+    (x, least_squares_linear_fit(interval, elevations, x))
 }
 
 fn qtile(nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
