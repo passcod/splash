@@ -16,14 +16,14 @@ _idea_ of SPLAT!, but taking different routes and making different decisions.
 
 ## Longley-Rice
 
-The algorithm used for modeling propagation is [Longley-Rice]. Splash contains
+The algorithm used for modelling propagation is [Longley-Rice]. Splash contains
 [an implementation] that was initially ported from the C++ source but thereafter
 modified to allow concurrent use. But the best thing about our implementation is
 that it is entirely documented and brought back to understandable and meaningful
 names, as well as containing references, descriptions, and explanations.
 
 As such, I believe it is much more approachable than the C++ or FORTRAN versions
-and that one does not need to refer back to the memos describing the algorithm.
+and that one may not need to refer back to the memos describing the algorithm.
 
 While this tool and library is licensed, its Longley-Rice implementation and
 associated documentation is released in the Public Domain.
