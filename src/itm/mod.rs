@@ -47,9 +47,9 @@ pub mod utils;
 /// therefore be done concurrently.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model<'a> {
-    length: f64,
+    length: f64, // <prop.dist>
     elevations: &'a Vec<f64>,
-    heights: (f64, f64),
+    heights: (f64, f64), // <hg>
     settings: &'a Settings,
     computed: Computed,
     cached: Cached,
@@ -147,10 +147,10 @@ impl<'a> Model<'a> {
     ///
     ///  - `length` and `elevations` are the terrain input. We assume elevations
     ///    are along a line of length `length` metres, spaced equidistantly, and
-    ///    that the transmitter is at distance zero. // prop.dist
+    ///    that the transmitter is at distance zero.
     ///
     ///  - `heights` is a tuple of the _height above ground_ in metres of the
-    ///    terminals (antennas), transmitter then receiver. // hg
+    ///    terminals (antennas), transmitter then receiver.
     ///
     ///  - `settings` is an instance of the `Settings` struct, containing
     ///    atmospheric, surface, radio, and statistical parameter values.
