@@ -136,6 +136,20 @@ impl Default for Cached {
     }
 }
 
+/// The polarisation of the radio wave.
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub enum Polarisation {
+    Horizontal,
+    Vertical,
+}
+
+impl Default for Polarisation {
+    fn default() -> Self {
+        Polarisation::Horizontal
+    }
+}
+
 /// The carrier or central frequency (in MHz).
 ///
 /// This is pre-computed (in the paper) assuming a speed of light **in air** of
@@ -471,9 +485,49 @@ pub struct Settings {
     /// Polarisation of modeled wave.
     pub polarisation: Polarisation,
 
+    // statistical fractions for the final quantisation
     pub conf: f64,
     pub rel: f64,
 }
+
+/// The inverse of the standard normal complementary probability function.
+///
+/// The standard normal complementary function is _Q(x) = 1 / √͞2͞π ∫ e^(-t²/2)_.
+/// This inverse is the solution for _x_ to _q = Q(x)_, also noted _Q¯¹(q)_.
+///
+/// This function is used to scale the inputs (the desired fractions of time,
+/// locations, situations to model) to later obtain normal quantiles.
+///
+/// The implementation is not the normal tables, but rather an approximation by
+/// [Cecil Hastings][Hastings55], with a maximum error of 4.5 × 10¯⁴.
+///
+/// In the FORTRAN, this function was called `qerfi`
+/// ("Q error function, inverted"), hence the constants. See <50>, <51>.
+///
+/// [Hastings55]: https://press.princeton.edu/titles/1133.html
+fn inverse_normal_complementary(q: f64) -> f64 {
+    let x = 0.5 - q;
+    let mut t = (0.5 - x.abs()).max(0.000001);
+    t = (-2.0 * t.ln()).sqrt();
+    let v = t - ((QERFI_C.2 * t + QERFI_C.1) * t + QERFI_C.0)
+        / (((QERFI_D.2 * t + QERFI_D.1) * t + QERFI_D.0) * t + 1.0);
+
+    if x < 0.0 {
+        -v
+    } else {
+        v
+    }
+}
+
+/// C group of constants for the qerf/qerfi approximations.
+const QERFI_C: (f64, f64, f64) = (2.515516698, 0.802853, 0.010328);
+
+/// D group of constants for the qerf/qerfi approximations.
+const QERFI_D: (f64, f64, f64) = (1.432788, 0.189269, 0.001308);
+
+
+// below this point is "original" code that, once the legibility and rustification
+// process is done, should completely disappear / not be used at all.
 
 /// Point-to-Point propagation
 pub fn point_to_point(
@@ -528,37 +582,7 @@ pub fn point_to_point(
     }
 }
 
-/// The inverse of the standard normal complementary probability function.
-///
-/// The standard normal complementary function is _Q(x) = 1 / √͞2͞π ∫ e^(-t²/2)_.
-/// This inverse is the solution for _x_ to _q = Q(x)_, also noted _Q¯¹(q)_.
-///
-/// This function is used to scale the inputs (the desired fractions of time,
-/// locations, situations to model) to later obtain normal quantiles.
-///
-/// The implementation is not the normal tables, but rather an approximation by
-/// [Cecil Hastings][Hastings55], with a maximum error of 4.5 × 10¯⁴.
-///
-/// In the FORTRAN, this function was called `qerfi`, hence the constants.
-///
-/// [Hastings55]: https://press.princeton.edu/titles/1133.html
-fn inverse_normal_complementary(q: f64) -> f64 {
-    let x = 0.5 - q;
-    let mut t = (0.5 - x.abs()).max(0.000001);
-    t = (-2.0 * t.ln()).sqrt();
-    let v = t - ((QERFI_C.2 * t + QERFI_C.1) * t + QERFI_C.0)
-        / (((QERFI_D.2 * t + QERFI_D.1) * t + QERFI_D.0) * t + 1.0);
-
-    if x < 0.0 {
-        -v
-    } else {
-        v
-    }
-}
-
-const QERFI_C: (f64, f64, f64) = (2.515516698, 0.802853, 0.010328);
-const QERFI_D: (f64, f64, f64) = (1.432788, 0.189269, 0.001308);
-
+// done (prepare_environment)
 fn qlrps(zsys: f64, pol: Polarisation, dielect: f64, conduct: f64, prop: &mut Prop) {
     let gma = 157e-9;
 
@@ -577,6 +601,7 @@ fn qlrps(zsys: f64, pol: Polarisation, dielect: f64, conduct: f64, prop: &mut Pr
     };
 }
 
+// mostly done (find_horizons, adjust_horizons)
 fn qlrpfl(
     distance: f64,
     elevations: &Vec<f64>,
@@ -670,9 +695,11 @@ fn qlrpfl(
 
     propv.lvar = 5;
 
+    // the big compute
     lrprop(0.0, prop, propa);
 }
 
+// done (find_horizons)
 fn hzns(distance: f64, elevations: &Vec<f64>, prop: &mut Prop) {
     let np = elevations.len();
     let xi = distance;
@@ -717,7 +744,7 @@ fn hzns(distance: f64, elevations: &Vec<f64>, prop: &mut Prop) {
     }
 }
 
-// <48>
+// <48> ("delta h over x", the interdecile range of elevations between x1 & x2)
 fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
     let np = elevations.len();
     let mut xa = xl.0 / distance;
@@ -761,10 +788,17 @@ fn d1thx(distance: f64, elevations: &Vec<f64>, xl: (f64, f64)) -> f64 {
     d1thxv / (1.0 - 0.8 * (-(xl.1 - xl.0) / 50.0e3).exp())
 }
 
+// transliteration typo of zlsql
 fn z1sq1(interval: f64, elevations: &Vec<f64>, x: (f64, f64)) -> ((f64, f64), (f64, f64)) {
+    zlsql(interval, elevations, x)
+}
+
+// <53> done in least_squares_linear_fit
+fn zlsql(interval: f64, elevations: &Vec<f64>, x: (f64, f64)) -> ((f64, f64), (f64, f64)) {
     (x, least_squares_linear_fit(interval, elevations, x))
 }
 
+// <52>. provides a quantile
 fn qtile(nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
     let mut m = 0;
     let mut n = nn;
@@ -830,14 +864,23 @@ fn qtile(nn: usize, elevations: &mut Vec<f64>, ir: usize) -> f64 {
     return q;
 }
 
+// <4>, <5>, the actual propagation compute
 fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
+    // first part is mostly input checks
+    // "kwx" is the error output... higher is worse, but really anything
+    // besides zero is bad, so during rewrite just abort early anytime.
+
     if !prop.setup_done {
+        // --- <6> --- prep secondary params
+
         propa.dls.0 = (2.0 * prop.he.0 / prop.gme).sqrt();
         propa.dls.1 = (2.0 * prop.he.1 / prop.gme).sqrt();
 
         propa.dlsa = propa.dls.0 + propa.dls.1;
         propa.dla = prop.dl.0 + prop.dl.1;
         propa.tha = (prop.the.0 + prop.the.1).max(-propa.dla * prop.gme);
+
+        // --- <7> --- checks ranges
 
         if prop.wn < 0.838 || prop.wn > 210.0 {
             prop.kwx = prop.kwx.max(1);
@@ -887,8 +930,9 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.0);
         prop.kwx = make_kwx_hg_again(prop.kwx, prop.hg.1);
 
+        // --- <9> --- diffraction coefficients --- see T.A. 4.2 through 4.8
         prop.dmin = (prop.he.0 - prop.he.1).abs() / 200e-3;
-        adiff(0.0, prop, propa);
+        let q = adiff(0.0, prop, propa);
         prop.xae = (prop.wn * prop.gme.powi(2)).cbrt();
         let d3 = propa.dlsa.max(1.3787 * prop.xae + propa.dla);
         let d4 = d3 + 2.7574 * prop.xae;
@@ -900,6 +944,7 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
 
     prop.dist = d;
 
+    // <8> distance bounds checks
     if prop.dist > 0.0 {
         if prop.dist > 1000e3 {
             prop.kwx = prop.kwx.max(1);
@@ -914,53 +959,57 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
         }
     }
 
+    // <15> line of sight calculations
     if prop.dist < propa.dlsa {
-        if !prop.wlos {
+        if !prop.wlos { // <16> prep constants on first run
             alos(0.0, prop, propa);
             let d2 = propa.dlsa;
             let a2 = propa.aed + d2 * propa.emd;
-            let mut d0 = 1.908 * prop.wn * prop.he.0 * prop.he.1;
+            let mut d0 = 1.908 * prop.wn * prop.he.0 * prop.he.1; // T.A. 4.38
 
             let d1;
             if propa.aed >= 0.0 {
-                d0 = d0.min(0.5 * propa.dla);
-                d1 = d0 + 0.25 * (propa.dla - d0);
+                d0 = d0.min(0.5 * propa.dla); // T.A. 4.28
+                d1 = d0 + 0.25 * (propa.dla - d0); // T.A. 4.29
             } else {
-                d1 = (-propa.aed / propa.emd).max(0.25 * propa.dla);
+                d1 = (-propa.aed / propa.emd).max(0.25 * propa.dla); // T.A. 4.30
             }
 
-            let a1 = alos(d1, prop, propa);
+            let a1 = alos(d1, prop, propa); // T.A. 4.31
 
             if d0 < d1 {
-                let a0 = alos(d0, prop, propa);
+                let a0 = alos(d0, prop, propa); // T.A. 4.30
                 let q = (d2 / d0).ln();
                 propa.ak2 = 0.0f64.max(
                     ((d2 - d0) * (a1 - a0) - (d1 - d0) * (a2 - a0))
                         / ((d2 - d0) * (d1 / d0).ln() - (d1 - d0) * q),
-                );
+                ); // T.A. 4.32
 
                 let wq = propa.aed >= 0.0 || propa.ak2 > 0.0;
 
                 if wq {
-                    propa.ak1 = (a2 - a0 - propa.ak2 * q) / (d2 - d0);
+                    propa.ak1 = (a2 - a0 - propa.ak2 * q) / (d2 - d0); // T.A. 4.33
 
                     if propa.ak1 < 0.0 {
-                        propa.ak1 = 0.0;
-                        propa.ak2 = fortran_dim(a2, a0) / q;
+                        propa.ak1 = 0.0; // T.A. 4.36
+                        propa.ak2 = fortran_dim(a2, a0) / q; // T.A. 4.35
 
+                        // T.A. 4.37
                         if propa.ak2 == 0.0 {
                             propa.ak1 = propa.emd;
                         }
                     }
                 } else {
-                    propa.ak2 = 0.0;
-                    propa.ak1 = (a2 - a1) / (d2 - d1);
+                    propa.ak1 = (a2 - a1) / (d2 - d1); // T.A. 4.40
+                    propa.ak2 = 0.0; // T.A. 4.41
 
+                    // T.A. 4.37
                     if propa.ak1 <= 0.0 {
                         propa.ak1 = propa.emd;
                     }
                 }
             } else {
+                // same as above
                 propa.ak1 = (a2 - a1) / (d2 - d1);
                 propa.ak2 = 0.0;
 
@@ -969,39 +1018,45 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
                 }
             }
 
+            // T.A. 4.42
             propa.ael = a2 - propa.ak1 * d2 - propa.ak2 * d2.ln();
+
             prop.wlos = true;
         }
 
+        // Do calculation when given real distance (dist = 0 is constant prep)
         if prop.dist > 0.0 {
+            // T.A. 4.1
             prop.aref = propa.ael + propa.ak1 * prop.dist + propa.ak2 * prop.dist.ln();
         }
     }
 
+    // <20> troposcatter calculations
     if prop.dist <= 0.0 || prop.dist >= propa.dlsa {
-        if !prop.wscat {
+        if !prop.wscat { // <21> -- setup constants
             ascat(0.0, prop, propa);
-            let d5 = propa.dla + 200e3;
-            let d6 = d5 + 200e3;
-            let a6 = ascat(d6, prop, propa);
-            let a5 = ascat(d5, prop, propa);
+            let d5 = propa.dla + 200e3; // T.A. 4.52
+            let d6 = d5 + 200e3; // T.A. 4.53
+            let a6 = ascat(d6, prop, propa); // T.A. 4.54
+            let a5 = ascat(d5, prop, propa); // T.A. 4.55
 
             if a5 < 1000.0 {
-                propa.ems = (a6 - a5) / 200e3;
+                propa.ems = (a6 - a5) / 200e3; // T.A. 4.57
                 propa.dx = propa.dlsa.max(
                     (propa.dla + 0.3 * prop.xae * (47.7 * prop.wn).ln())
                         .max((a5 - propa.aed - propa.ems * d5) / (propa.emd - propa.ems)),
-                );
-                propa.aes = (propa.emd - propa.ems) * propa.dx + propa.aed;
+                ); // T.A. 4.58
+                propa.aes = (propa.emd - propa.ems) * propa.dx + propa.aed; // T.A. 4.59
             } else {
                 propa.ems = propa.emd;
                 propa.aes = propa.aed;
-                propa.dx = 10.0e6;
+                propa.dx = 10.0e6; // T.A. 4.56
             }
 
             prop.wscat = true;
         }
 
+        // T.A. 4.1
         if prop.dist > propa.dx {
             prop.aref = propa.aes + propa.ems * prop.dist;
         } else {
@@ -1012,11 +1067,12 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
     prop.aref = prop.aref.max(0.0);
 }
 
+// <10> diffraction attenuation at distance d from site
 fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
-    // this is setting up data for iterations beyond the first (d=0 == first)
-    // gotta figure out how to do this in rust...
-    // ...without sharing data between *different* runs!
-    if d == 0.0 {
+    // first call with d == 0.0 is used to setup constants
+    // should be extracted into two functions and the constants stored in a
+    // struct or the cached structure or something.
+    if d == 0.0 { // see <11>
         let mut q = prop.hg.1 * prop.hg.1;
         let qk = prop.he.0 * prop.he.1 - q;
 
@@ -1024,19 +1080,22 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         //     q += 10.0;
         // }
 
+        // "parts of Q" see T.A. 4.9
         let wd1 = (1.0 + qk / q).sqrt();
         let xd1 = propa.dla + propa.tha / prop.gme;
 
+        // T.A. 4.10
         q = (1.0 - 0.8 * (-propa.dlsa / 50e3).exp()) * prop.dh;
         q *= 0.78 * (-(q / 16.0).powf(0.25)).exp();
-
         let afo = 15.0f64.min(2.171 * (1.0 + 4.77e-4 * prop.hg.0 * prop.hg.1 * prop.wn * q).ln());
+
+        // T.A. 6.7
         let qk = 1.0 / prop.zgnd.norm_sqr().sqrt();
         let mut aht = 20.0;
         let mut xht = 0.0;
 
         if false {
-            /// ???
+            /// ??? probably used somehow, needs a reread
             fn make_axht(dl: f64, he: f64, wn: f64, qk: f64) -> (f64, f64) {
                 let a = 0.5 * dl.powi(2) / he;
                 let wa = (a * wn).cbrt();
@@ -1054,15 +1113,19 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
             aht += a;
         }
 
-        0.0 // ???
-    } else {
+        0.0 // returns 0 just because this is the dummy setup round
+    } else { // see <12>
+
+        // T.A. 4.12
         let th = propa.tha + d * prop.gme;
         let ds = d - propa.dla;
         let mut q = 0.0795775 * prop.wn * ds * th * th;
+
+        // T.A. 4.14
         let adiffv =
             aknfe(q * prop.dl.0 / (ds + prop.dl.0)) + aknfe(q * prop.dl.1 / (ds + prop.dl.1));
 
-        // These were added in as they were not set before in this branch wtf???
+        // Dummy values to get this compiling -- they're from the constants run
         let qk = 0.0;
         let xht = 0.0;
         let aht = 0.0;
@@ -1070,56 +1133,69 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let xd1 = 0.0;
         let afo = 0.0;
 
+        // T.A. 4.16
         let a = ds / th;
         let wa = (a * prop.wn).cbrt();
-        let pk = qk / wa;
-        q = (1.607 - pk) * 151.0 * wa * th + xht;
-        let ar = 0.05751 * q - 4.343 * q.ln() - aht;
+        let pk = qk / wa; // T.A. 4.17
+        q = (1.607 - pk) * 151.0 * wa * th + xht; // T.A. 4.18 and 6.2
+        let ar = 0.05751 * q - 4.343 * q.ln() - aht; // T.A. 4.20
         q = (wd1 + xd1 / d) * 6283.2f64.min((1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh * prop.wn);
 
+        // T.A. 4.9
         let wd = 25.1 / (25.1 + q.sqrt());
+
+        // T.A. 4.11
         ar * wd + (1.0 - wd) * adiffv + afo
     }
 }
 
+// <17> line of sight attenuation at distance d from site
 fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     let mut wls = 0.0;
 
-    // see adiff comment
-    if d == 0.0 {
+    // see adiff comment on constant gen and splitting
+    if d == 0.0 { // <18>
+        // T.A. 4.43
         wls = 0.021 / (0.021 + prop.wn * prop.dh / 10e3f64.max(propa.dlsa));
         0.0
-    } else {
+    } else { // <19>
         let mut q = (1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh;
         let s = 0.78 * q * (-(q / 16.0).powf(0.25)).exp();
         q = prop.he.0 + prop.he.1;
         let sps = q / (d.powi(2) + q.powi(2)).sqrt();
+
+        // T.A. 4.47
         let mut r = (sps - prop.zgnd) / (sps + prop.zgnd) * (-10.0f64.min(prop.wn * s * sps)).exp();
         q = r.norm_sqr();
 
+        // T.A. 4.48
         if q < 0.25 || q < sps {
             r = r * (sps / q).sqrt();
         }
 
-        let alosv = propa.emd * d + propa.aed;
-        q = prop.wn * prop.he.0 * prop.he.1 * 2.0 / d;
+        let alosv = propa.emd * d + propa.aed; // T.A. 4.45
+        q = prop.wn * prop.he.0 * prop.he.1 * 2.0 / d; // T.A. 4.49
 
+        // T.A. 4.50
         if q > 1.57 {
             q = 3.14 - 2.4649 / q;
         }
 
+        // T.A. 4.51 and 4.44
         let qq = Complex64::new(q.cos(), -q.sin());
         (-4.343 * (qq + r).norm_sqr().ln() - alosv) * wls + alosv
     }
 }
 
+// <22> scatter attenuation at distance d from site
+// See TN101 for approximation method description
 fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     // static double ad, rr, etq, h0s;
     // double h0, r1, r2, z0, ss, et, ett, th, q;
     // double ascatv, temp;
 
-    // see adiff comment
-    if d == 0.0 {
+    // see adiff comment on constant gen and splitting
+    if d == 0.0 { // <23>
         prop.ad = prop.dl.0 - prop.dl.1;
         prop.rr = prop.he.1 / prop.rch.0;
 
@@ -1128,55 +1204,70 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
             prop.rr = 1.0 / prop.rr;
         }
 
+        // T.A. 4.67 (partial)
         prop.etq = (5.67e-6 * prop.ens - 2.32e-3) * prop.ens + 0.031;
         prop.h0s = -15.0;
         0.0
-    } else {
+    } else { // <24>
         let mut h0;
         if prop.h0s > 15.0 {
             h0 = prop.h0s;
         } else {
-            let th = prop.the.0 + prop.the.1 + d * prop.gme;
+            let th = prop.the.0 + prop.the.1 + d * prop.gme; // T.A. 4.61
+
+            // T.A. 4.62
             let mut r2 = 2.0 * prop.wn * th;
             let r1 = r2 * prop.he.0;
             r2 *= prop.he.1;
 
+            // bounds check. 1001 is "error" value to exit out
             if r1 < 0.2 && r2 < 0.2 {
                 return 1001.0;
             }
 
-            let mut ss = (d - prop.ad) / (d + prop.ad);
+            let mut ss = (d - prop.ad) / (d + prop.ad); // T.A. 4.65
+
+            // T.A. 4.66
             let mut q = prop.rr / ss;
             ss = ss.max(0.1);
             q = q.max(0.1).min(10.0);
             let z0 = (d - prop.ad) * (d + prop.ad) * th * 0.25 / d;
 
+            // T.A. 4.67
             let temp = (z0 / 8.0e3).min(1.7).powi(6);
             let et = (prop.etq * (-temp).exp() + 1.0) * z0 / 1.7556e3;
-
             let ett = et.max(1.0);
-            h0 = (h0f(r1, ett) + h0f(r2, ett)) * 0.5;
-            h0 += 1.38 - ett.ln().min(h0) * ss.ln() * q.ln() * 0.49;
+
+            h0 = (h0f(r1, ett) + h0f(r2, ett)) * 0.5; // T.A. 6.12
+            h0 += 1.38 - ett.ln().min(h0) * ss.ln() * q.ln() * 0.49; // T.A. 6.10 and 6.11
             h0 = fortran_dim(h0, 0.0);
 
+            // T.A. 6.14
             if et < 1.0 {
                 let temp = (1.0 + 1.4142 / r1) * (1.0 + 1.4142 / r2);
                 h0 = et * h0
                     + (1.0 - et) * 4.343 * (temp.powi(2) * (r1 + r2) / (r1 + r2 + 2.8284)).ln();
             }
 
+            // calc got out of bounds, revert back
             if h0 > 15.0 && prop.h0s >= 0.0 {
                 h0 = prop.h0s;
             }
         }
 
         prop.h0s = h0;
+
+        // T.A. 4.60
         let th = propa.tha + d * prop.gme;
+
+        // T.A. 4.63 and 6.8
         ahd(th * d) + 4.343 * (47.7 * prop.wn * th.powi(4)).ln()
             - 0.1 * (prop.ens - 301.0) * (-th * d / 40e3).exp() + h0
     }
 }
 
+// <13> attenuation on a single knife edge
+// this is an approximation of a Fresnel integral, see T.A. 6.1
 fn aknfe(v2: f64) -> f64 {
     if v2 < 5.76 {
         6.02 + 9.11 * v2.sqrt() - 1.27 * v2
@@ -1185,33 +1276,38 @@ fn aknfe(v2: f64) -> f64 {
     }
 }
 
+// <14> Height gain over geodesic model -- here instead approximated to a
+// smooth spherical earth. See T.A. 6.4
 fn fht(x: f64, pk: f64) -> f64 {
-    let mut fhtv;
-
     if x < 200.0 {
         let w = -pk.ln();
 
         if pk < 1.0e-5 || x * w.powi(3) > 5495.0 {
-            fhtv = -117.0;
-
             if x > 1.0 {
-                fhtv = 40.0 * x.log10() + fhtv;
+                // this is changed from the original! to be investigated
+                // <14> has 40.0 as 17.372 ref T.A. 6.5
+                40.0 * x.log10() - 117.0
+            } else {
+                -117.0
             }
         } else {
-            fhtv = 2.5e-5 * x.powi(2) / pk - 8.686 * w - 15.0;
+            // T.A. 6.6
+            2.5e-5 * x.powi(2) / pk - 8.686 * w - 15.0
         }
     } else {
-        fhtv = 0.05751 * x - 10.0 * x.log10();
+        // T.A. 6.3
+        let fhtv = 0.05751 * x - 10.0 * x.log10();
 
         if x < 2000.0 {
             let w = 0.0134 * x * (-0.005 * x).exp();
-            fhtv = (1.0 - w) * fhtv + w * (40.0 * x.log10() - 117.0);
+            (1.0 - w) * fhtv + w * (40.0 * x.log10() - 117.0) // T.A. 6.4
+        } else {
+            fhtv
         }
     }
-
-    fhtv
 }
 
+// <25> H01 function for scatter fields, see T.A. §6
 fn h0f(r: f64, et: f64) -> f64 {
     let a = [25.0, 80.0, 177.0, 395.0, 705.0];
     let b = [24.0, 45.0, 68.0, 80.0, 105.0];
@@ -1225,7 +1321,7 @@ fn h0f(r: f64, et: f64) -> f64 {
     };
 
     let x = (1.0 / r).powi(2);
-    let h0fv = 4.343 * ((a[it - 1] * x + b[it - 1]) * x + 1.0).ln();
+    let h0fv = 4.343 * ((a[it - 1] * x + b[it - 1]) * x + 1.0).ln(); // T.A. 6.13
 
     if q == 0.0 {
         h0fv
@@ -1234,11 +1330,13 @@ fn h0f(r: f64, et: f64) -> f64 {
     }
 }
 
+// <26> F(theta d) function for scatter fields
 fn ahd(td: f64) -> f64 {
     let a = [133.4, 104.6, 71.8];
     let b = [0.332e-3, 0.212e-3, 0.157e-3];
     let c = [-4.343, -1.086, 2.171];
 
+    // choice of constants
     let i = if td <= 10e3 {
         0
     } else if td <= 70e3 {
@@ -1247,12 +1345,28 @@ fn ahd(td: f64) -> f64 {
         2
     };
 
-    a[i] + b[i] * td + c[i] * td.ln()
+    a[i] + b[i] * td + c[i] * td.ln() // T.A. 6.9
 }
 
 const RT: f64 = 7.8;
 const RL: f64 = 24.0;
 
+// <27> "the statistics"
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct PropV { // used in avar
+    pub sgc: f64, // stddev of confidence -- an output of avar
+
+    pub lvar: isize, // control switch
+    // this is an optimisation in the original program and will need to be
+    // rewritten out, with the different sections it controls split out.
+    // the idea is to run some preparation functions only when needed, but
+    // it makes the whole thing incomprehensible. See <28> for more.
+
+    pub mdvar: isize, // variability mode switch
+    pub klim: Climate,
+}
+
+// <28>
 fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64 {
     // static int kdv;
     // static bool ws, w1;
@@ -1270,12 +1384,14 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     let mut sgtp = 0.0;
     let mut sgtd = 0.0;
     let mut tgtd = 0.0;
+    // ^ the "constants" to be set up (also see lvar) <27>
 
+    // <29>, <30>, <32> select the set of constants to be used for climate adjustments
     let cc: ClimateConstants = propv.klim.into();
 
-    if propv.lvar > 0 {
+    if propv.lvar > 0 { // <31>
         match propv.lvar {
-            4 => {
+            4 => { // <33>
                 kdv = propv.mdvar;
                 ws = kdv >= 20;
                 if ws {
@@ -1292,12 +1408,12 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
                     prop.kwx = prop.kwx.max(2);
                 }
             }
-            2 => {
+            2 => { // <35> system
                 dexa = (18e6 * prop.he.0).sqrt()
                     + (18e6 * prop.he.1).sqrt()
                     + (575.7e12 / prop.wn).cbrt();
             }
-            1 => {
+            1 => { // <36> distance
                 de = if prop.dist < dexa {
                     130e3 * prop.dist / dexa
                 } else {
@@ -1307,6 +1423,7 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
             _ => {}
         }
 
+        // <32> climate
         let refs = cc.reference_values(de, prop.wn);
         vmd = refs.0;
         sgtm = refs.1;
@@ -1314,6 +1431,7 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
         sgtd = refs.3;
         tgtd = refs.4;
 
+        // <36> distance again
         sgl = if w1 {
             0.0
         } else {
@@ -1321,6 +1439,7 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
             10.0 * q / (q + 13.0)
         };
 
+        // <36> still distance
         vs0 = if ws {
             0.0
         } else {
@@ -1333,6 +1452,7 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     let mut zt = zzt;
     let mut zl = zzl;
 
+    // <37> normal deviates
     match kdv {
         0 => {
             zt = zzc;
@@ -1347,10 +1467,12 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
         _ => {}
     };
 
+    // <37>
     if zt.abs() > 3.1 || zl.abs() > 3.1 || zzc.abs() > 3.1 {
         prop.kwx = prop.kwx.max(1);
     }
 
+    // <38> resolve standard deviations
     let sgt = if zt < 0.0 {
         sgtm
     } else if zt <= cc.zd {
@@ -1358,21 +1480,21 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     } else {
         sgtd + tgtd / zt
     };
-
     let vs = vs0 + (sgt * zt).powi(2) / (RT + zzc * zzc) + (sgl * zl).powi(2) / (RL + zzc * zzc);
 
+    // <39> resolve deviations yr, yc
     let (yr, sgc) = match kdv {
         0 => (0.0, sgt.powi(2) + sgl.powi(2) + vs),
         1 => (sgt * zt, sgl.powi(2) + vs),
         2 => ((sgt.powi(2) + sgl.powi(2)).sqrt() * zt, vs),
         _ => (sgt * zt + sgl * zl, vs),
     };
-
     propv.sgc = sgc.sqrt();
 
+    // T.A. 5.1
     let avarv = prop.aref - vmd - yr - propv.sgc * zzc;
     if avarv < 0.0 {
-        avarv * (29.0 - avarv) / (29.0 - 10.0 * avarv)
+        avarv * (29.0 - avarv) / (29.0 - 10.0 * avarv) // T.A. 5.2
     } else {
         avarv
     }
@@ -1458,14 +1580,6 @@ pub struct Prop {
     pub h0s: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-pub struct PropV {
-    pub sgc: f64,
-    pub lvar: isize,
-    pub mdvar: isize,
-    pub klim: Climate,
-}
-
 /// Secondary parameters computed in LRProp.
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct PropA {
@@ -1504,18 +1618,4 @@ pub struct PropA {
 
     /// Total bending angle
     pub tha: f64,
-}
-
-/// The polarisation of the radio wave.
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub enum Polarisation {
-    Horizontal,
-    Vertical,
-}
-
-impl Default for Polarisation {
-    fn default() -> Self {
-        Polarisation::Horizontal
-    }
 }
