@@ -30,3 +30,22 @@ associated documentation is released in the Public Domain.
 
 [Longley-Rice]: https://en.wikipedia.org/wiki/Longley%E2%80%93Rice_model
 [an implementation]: https://docs.rs/splash/*/splash/itm/index.html
+
+### Parallel performance expectations
+
+Using the reimplementation and Rust's capabilities, and taking prior research
+by [Song 2011] and [Musselman 2013] into account, Splash expects to be able to
+perform at least as fast given intervening years' compute advances.
+
+Notably, **Song 2011** describes obtaining a 150k point "HD" splat propagation
+model in less than a second on an nVidia Tesla GPU. Current consumer-grade
+Intel GPUs are several times more powerful, and gaming-grade GPUs may be orders
+of magnitude faster. Even an Intel i7-core CPU with symmetric multiprocessing
+may bring comparable results. Thus, the expectation with Splash is to obtain, at
+minimum:
+
+ - with GPU: < 500 milliseconds for a full render, or
+ - CPU only: < 20 seconds for a full render.
+
+[Song 2011]: https://ieeexplore.ieee.org/document/5680900/
+[Musselman 2013]: https://github.com/amusselm/Parallel-LRP
