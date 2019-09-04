@@ -28,12 +28,15 @@
 //! [ITM68]: https://www.its.bldrdoc.gov/resources/radio-propagation-software/itm/itm.aspx
 //! [SPLAT!]: http://www.qsl.net/kd2bd/splat.html
 
+#![forbid(unsafe_code)]
+#![cfg_attr(feature = "cargo-clippy", deny(clippy_pedantic))]
+
 use climate::{Climate, ClimateConstants};
 use num_complex::Complex64;
-use utils::*;
+use formulae::*;
 
 pub mod climate;
-pub mod utils;
+pub mod formulae;
 
 /// Propagation model instance.
 ///

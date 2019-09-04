@@ -1,0 +1,11 @@
+[package]
+name = "splash-longleyrice"
+edition = "2018"
+version = "0.1.0"
+
+authors = ["Félix Saparelli <felix@passcod.name>"]
+description = "Longley-Rice RF Signal Propagation model"
+license = "CC0-1.0"
+
+[dependencies]
+num-complex = "0.2.3"

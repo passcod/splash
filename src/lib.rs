@@ -1,14 +1,8 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy_pedantic))]
 
-extern crate gdal;
-extern crate geo;
-extern crate num_complex;
-
 use geo::Point;
 use itm::*;
-
-pub mod itm;
 
 const EQUATORIAL_RADIUS: f64 = 6_378_137.0;
 const POLAR_RADIUS: f64 = 6_356_752.3;
