@@ -47,5 +47,8 @@ minimum:
  - with GPU: < 500 milliseconds for a full render, or
  - CPU only: < 20 seconds for a full render.
 
+However, unlike **Musselman 2013**, the goal of Splash is to provide a
+production-grade parallel ITM implementation: maintainable, extensible, tested.
+
 [Song 2011]: https://ieeexplore.ieee.org/document/5680900/
 [Musselman 2013]: https://github.com/amusselm/Parallel-LRP

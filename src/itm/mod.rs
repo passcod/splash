@@ -168,6 +168,31 @@ impl<'a> Model<'a> {
     ///
     ///  - `settings` is an instance of the `Settings` struct, containing
     ///    atmospheric, surface, radio, and statistical parameter values.
+    ///
+    /// Upon construction, we prepare all values needed for the individual
+    /// calculations, perform bounds checking, and decide on the mode or modes
+    /// of the model.
+    ///
+    /// The ITM has three different modes depending on the characteristics and
+    /// distance modeled. We assume that all points within the given profile
+    /// will be queried, so if the inputs span two or more modes, we prepare for
+    /// each of those.
+    ///
+    ///  - If the _distance to site_ is less than line of sight, then path loss
+    ///    is found from the Line-Of-Sight submodel, from optic horizon and the
+    ///    two-ray model.
+    ///
+    ///  - If the _distance to site_ is larger than that, but still within the
+    ///    radio horizon, then the Diffraction submodel is used, considering the
+    ///    curvature of the Earth and knife-edge mechanisms.
+    ///
+    ///  - If the _distance to site_ is beyond the radio horizon, the Scatter
+    ///    submodel is used, which computes constants for a linear relationship.
+    ///
+    /// After the attenuation is found, atmospheric and climate conditions are
+    /// brought back to the global measurements made by the ITM team around the
+    /// world and they are used to perform statistical quantile variability
+    /// modelling given two input settings: % of time, and % of situations.
     pub fn new(
         length: f64,
         elevations: &'a Vec<f64>,
