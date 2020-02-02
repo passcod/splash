@@ -29,11 +29,17 @@
 //! [SPLAT!]: http://www.qsl.net/kd2bd/splat.html
 
 #![forbid(unsafe_code)]
-#![cfg_attr(feature = "cargo-clippy", deny(clippy_pedantic))]
+#![deny(
+    intra_doc_link_resolution_failure,
+    clippy::pedantic,
+    deprecated,
+    clippy::option_unwrap_used,
+    clippy::result_unwrap_used
+)]
 
 use climate::{Climate, ClimateConstants};
-use num_complex::Complex64;
 use formulae::*;
+use num_complex::Complex64;
 
 pub mod climate;
 pub mod formulae;
@@ -341,6 +347,7 @@ impl<'a> Model<'a> {
     ///
     /// See ITM sections `<43>` and `<44>`.
     fn get_xl(&mut self) -> (f64, f64) {
+        #[inline]
         fn make_xl(h: f64, horiz_dist: f64) -> f64 {
             (15.0 * h).min(0.1 * horiz_dist)
         }
@@ -537,8 +544,9 @@ fn inverse_normal_complementary(q: f64) -> f64 {
     let x = 0.5 - q;
     let mut t = (0.5 - x.abs()).max(0.000001);
     t = (-2.0 * t.ln()).sqrt();
-    let v = t - ((QERFI_C.2 * t + QERFI_C.1) * t + QERFI_C.0)
-        / (((QERFI_D.2 * t + QERFI_D.1) * t + QERFI_D.0) * t + 1.0);
+    let v = t
+        - ((QERFI_C.2 * t + QERFI_C.1) * t + QERFI_C.0)
+            / (((QERFI_D.2 * t + QERFI_D.1) * t + QERFI_D.0) * t + 1.0);
 
     if x < 0.0 {
         -v
@@ -552,7 +560,6 @@ const QERFI_C: (f64, f64, f64) = (2.515516698, 0.802853, 0.010328);
 
 /// D group of constants for the qerf/qerfi approximations.
 const QERFI_D: (f64, f64, f64) = (1.432788, 0.189269, 0.001308);
-
 
 // below this point is "original" code that, once the legibility and rustification
 // process is done, should completely disappear / not be used at all.
@@ -989,7 +996,8 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
 
     // <15> line of sight calculations
     if prop.dist < propa.dlsa {
-        if !prop.wlos { // <16> prep constants on first run
+        if !prop.wlos {
+            // <16> prep constants on first run
             alos(0.0, prop, propa);
             let d2 = propa.dlsa;
             let a2 = propa.aed + d2 * propa.emd;
@@ -1061,7 +1069,8 @@ fn lrprop(d: f64, prop: &mut Prop, propa: &mut PropA) {
 
     // <20> troposcatter calculations
     if prop.dist <= 0.0 || prop.dist >= propa.dlsa {
-        if !prop.wscat { // <21> -- setup constants
+        if !prop.wscat {
+            // <21> -- setup constants
             ascat(0.0, prop, propa);
             let d5 = propa.dla + 200e3; // T.A. 4.52
             let d6 = d5 + 200e3; // T.A. 4.53
@@ -1100,7 +1109,8 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     // first call with d == 0.0 is used to setup constants
     // should be extracted into two functions and the constants stored in a
     // struct or the cached structure or something.
-    if d == 0.0 { // see <11>
+    if d == 0.0 {
+        // see <11>
         let mut q = prop.hg.1 * prop.hg.1;
         let qk = prop.he.0 * prop.he.1 - q;
 
@@ -1142,7 +1152,8 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         }
 
         0.0 // returns 0 just because this is the dummy setup round
-    } else { // see <12>
+    } else {
+        // see <12>
 
         // T.A. 4.12
         let th = propa.tha + d * prop.gme;
@@ -1182,11 +1193,13 @@ fn alos(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     let mut wls = 0.0;
 
     // see adiff comment on constant gen and splitting
-    if d == 0.0 { // <18>
+    if d == 0.0 {
+        // <18>
         // T.A. 4.43
         wls = 0.021 / (0.021 + prop.wn * prop.dh / 10e3f64.max(propa.dlsa));
         0.0
-    } else { // <19>
+    } else {
+        // <19>
         let mut q = (1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh;
         let s = 0.78 * q * (-(q / 16.0).powf(0.25)).exp();
         q = prop.he.0 + prop.he.1;
@@ -1223,7 +1236,8 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
     // double ascatv, temp;
 
     // see adiff comment on constant gen and splitting
-    if d == 0.0 { // <23>
+    if d == 0.0 {
+        // <23>
         prop.ad = prop.dl.0 - prop.dl.1;
         prop.rr = prop.he.1 / prop.rch.0;
 
@@ -1236,7 +1250,8 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         prop.etq = (5.67e-6 * prop.ens - 2.32e-3) * prop.ens + 0.031;
         prop.h0s = -15.0;
         0.0
-    } else { // <24>
+    } else {
+        // <24>
         let mut h0;
         if prop.h0s > 15.0 {
             h0 = prop.h0s;
@@ -1290,7 +1305,8 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
 
         // T.A. 4.63 and 6.8
         ahd(th * d) + 4.343 * (47.7 * prop.wn * th.powi(4)).ln()
-            - 0.1 * (prop.ens - 301.0) * (-th * d / 40e3).exp() + h0
+            - 0.1 * (prop.ens - 301.0) * (-th * d / 40e3).exp()
+            + h0
     }
 }
 
@@ -1381,7 +1397,8 @@ const RL: f64 = 24.0;
 
 // <27> "the statistics"
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-pub struct PropV { // used in avar
+pub struct PropV {
+    // used in avar
     pub sgc: f64, // stddev of confidence -- an output of avar
 
     pub lvar: isize, // control switch
@@ -1389,7 +1406,6 @@ pub struct PropV { // used in avar
     // rewritten out, with the different sections it controls split out.
     // the idea is to run some preparation functions only when needed, but
     // it makes the whole thing incomprehensible. See <28> for more.
-
     pub mdvar: isize, // variability mode switch
     pub klim: Climate,
 }
@@ -1417,9 +1433,11 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
     // <29>, <30>, <32> select the set of constants to be used for climate adjustments
     let cc: ClimateConstants = propv.klim.into();
 
-    if propv.lvar > 0 { // <31>
+    if propv.lvar > 0 {
+        // <31>
         match propv.lvar {
-            4 => { // <33>
+            4 => {
+                // <33>
                 kdv = propv.mdvar;
                 ws = kdv >= 20;
                 if ws {
@@ -1436,12 +1454,14 @@ fn avar(zzt: f64, zzl: f64, zzc: f64, prop: &mut Prop, propv: &mut PropV) -> f64
                     prop.kwx = prop.kwx.max(2);
                 }
             }
-            2 => { // <35> system
+            2 => {
+                // <35> system
                 dexa = (18e6 * prop.he.0).sqrt()
                     + (18e6 * prop.he.1).sqrt()
                     + (575.7e12 / prop.wn).cbrt();
             }
-            1 => { // <36> distance
+            1 => {
+                // <36> distance
                 de = if prop.dist < dexa {
                     130e3 * prop.dist / dexa
                 } else {
