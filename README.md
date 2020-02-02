@@ -25,8 +25,9 @@ names, as well as containing references, descriptions, and explanations.
 As such, I believe it is much more approachable than the C++ or FORTRAN versions
 and that one may not need to refer back to the memos describing the algorithm.
 
-While this tool and library is licensed, its Longley-Rice implementation and
-associated documentation is released in the Public Domain.
+While this tool and library is copyrighted, its Longley-Rice implementation
+subproject, including the associated documentation, in the [itm](./itm)
+subfolder, is released in the Public Domain.
 
 [Longley-Rice]: https://en.wikipedia.org/wiki/Longley%E2%80%93Rice_model
 [an implementation]: https://docs.rs/splash/*/splash/itm/index.html
