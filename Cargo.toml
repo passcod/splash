@@ -5,7 +5,7 @@ version = "0.1.0"
 
 authors = ["Félix Saparelli <felix@passcod.name>"]
 description = "RF Signal Propagation analysis tool: like SPLAT! but more flexible"
-license = "Prosperity-2.0.0"
+license = "CC-BY-NC-SA-4.0"
 
 [dependencies]
 gdal = "0.5.0"
