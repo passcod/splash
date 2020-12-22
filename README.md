@@ -3,53 +3,75 @@
 **[SPLAT!]** is a wonderful tool for RF analysis over terrain. Unfortunately,
 it only works with a few terrain sources and only uses one core for processing.
 
-**Splash** is not a rewrite of SPLAT!. It is a different implementation of the
-_idea_ of SPLAT!, but taking different routes and making different decisions.
-
 [SPLAT!]: http://www.qsl.net/kd2bd/splat.html
 
-## Differences
+**Splash** is three things, in this order:
 
- - Splash only understands metres, and internally, it uses SI units.
- - Splash does not output pretty pictures, but raster GIS data (GeoTIFF).
- - Splash does not use SDF input files, but raster GIS data (GeoTIFF).
-
-## Longley-Rice
-
-The algorithm used for modelling propagation is [Longley-Rice]. Splash contains
-[an implementation] that was initially ported from the C++ source but thereafter
-modified to allow concurrent use. But the best thing about our implementation is
-that it is entirely documented and brought back to understandable and meaningful
-names, as well as containing references, descriptions, and explanations.
-
-As such, I believe it is much more approachable than the C++ or FORTRAN versions
-and that one may not need to refer back to the memos describing the algorithm.
-
-While this tool and library is copyrighted, its Longley-Rice implementation
-subproject, including the associated documentation, in the [itm](./itm)
-subfolder, is released in the Public Domain.
+1. A learning project to teach myself about the maths and physics underlying
+   the [Longley-Rice] Irregular Terrain Model (ITM) as I go about porting it to
+   Rust.
+2. A learning project to teach myself deep optimisation over modern hardware,
+   using at least SIMD and hopefully GPU to dramatically improve modelisation
+   performance.
+3. A production-grade interface to the ITM, and eventually other models.
 
 [Longley-Rice]: https://en.wikipedia.org/wiki/Longley%E2%80%93Rice_model
-[an implementation]: https://docs.rs/splash/*/splash/itm/index.html
 
-### Parallel performance expectations
+## Porting goals
 
-Using the reimplementation and Rust's capabilities, and taking prior research
-by [Song 2011] and [Musselman 2013] into account, Splash expects to be able to
-perform at least as fast given intervening years' compute advances.
+ - Not merely a port of the C++ port of the FORTRAN original, but a full
+   refactor, with all functions and variables named sensibly.
+ - Everything thoroughly documented inline, with the minor goal that one should
+   be able to understand (at a high level) how the ITM works “simply” by
+   reading Splash’s source.
+ - 1950-era approximations replaced by exact versions for math functions where
+   possible.
+ - Entirely safe code.
+ - Separation of preparation and execution routines.
 
-Notably, **Song 2011** describes obtaining a 150k point "HD" splat propagation
-model in less than a second on an nVidia Tesla GPU. Current consumer-grade
-Intel GPUs are several times more powerful, and gaming-grade GPUs may be orders
-of magnitude faster. Even an Intel i7-core CPU with symmetric multiprocessing
-may bring comparable results. Thus, the expectation with Splash is to obtain, at
-minimum:
+## Research and papers
 
- - with GPU: < 500 milliseconds for a full render, or
- - CPU only: < 20 seconds for a full render.
+### Longley-Rice ITM
 
-However, unlike **Musselman 2013**, the goal of Splash is to provide a
-production-grade parallel ITM implementation: maintainable, extensible, tested.
+ - [The Irregular Terrain Model]: FORTRAN implementation with descriptions (NTIA 2002)
+ - [Hufford 1995]: The (ITM) Algorithm, v1.2.2
+ - [Hufford-Longley-Kissick 1982]: A Guide to the Use of the ITM
+ - [McKenna 2016]: Propagation Measurement Workshop (Slides)
 
+### Background
+
+ - [Norton 1959]: Transmission Loss in Radio Propagation II
+ - [Handbook on Ground Wave Propagation]: Edition of 2014 (ITU Radiocommunication Bureau)
+ - [Phillips 2012]: Geostatistical Techniques for Practical Wireless Network Coverage Mapping
+
+### Parallel ITM
+
+ - [Song 2011]: Parallel Implementation of the Irregular Terrain Model (ITM) for Radio Transmission Loss Prediction Using GPU and Cell BE Processors
+ - [Musselman 2013]: An OpenCL Implementation of the Irregular Terrain with Obstructions Model (ITWOM)
+
+### Accuracy studies
+
+ - [Sun 2015]: Propagation Path Loss Models for 5G Urban Micro-and Macro-Cellular Scenarios
+ - [Sun 2016]: Investigation of Prediction Accuracy, Sensitivity, and Parameter Stability of Large-Scale Propagation Path Loss Models for 5G Wireless Communications
+ - [Abhayawardhana 2005]: Comparison of Empirical Propagation Path Loss Models for Fixed Wireless Access Systems
+
+### Other models or improvements
+
+ - [El-Sallabi 2011]: Terrain Partial Obstruction LOS Path Loss Model for Rural Environments
+ - [Phillips 2012]: Geostatistical Techniques for Practical Wireless Network Coverage Mapping
+ - [MacCartney 2017]: Rural Macrocell Path Loss Models for Millimeter Wave Wireless Communications
+
+[The Irregular Terrain Model]: https://www.its.bldrdoc.gov/media/50674/itm.pdf
+[Hufford 1995]: https://www.its.bldrdoc.gov/media/50676/itm_alg.pdf
+[Hufford-Longley-Kissick 1982]: https://www.ntia.doc.gov/files/ntia/publications/ntia_82-100_20121129145031_555510.pdf
+[McKenna 2016]: https://www.its.bldrdoc.gov/resources/workshops/propagation-measurement-workshops-webinars.aspx
+[Norton 1959]: https://nvlpubs.nist.gov/nistpubs/Legacy/TN/nbstechnicalnote12.pdf
+[Handbook on Ground Wave Propagation]: https://www.itu.int/dms_pub/itu-r/opb/hdb/R-HDB-59-2014-PDF-E.pdf
+[Phillips 2012]: https://core.ac.uk/display/54849067
 [Song 2011]: https://ieeexplore.ieee.org/document/5680900/
-[Musselman 2013]: https://github.com/amusselm/Parallel-LRP
+[Musselman 2013]: https://github.com/amusselm/Parallel-LRP/blob/master/documents/report.pdf
+[Sun 2016]: https://arxiv.org/abs/1603.04404
+[Sun 2015]: https://arxiv.org/abs/1511.07311
+[Abhayawardhana 2005]: https://ieeexplore.ieee.org/document/1543252
+[El-Sallabi 2011]: https://ieeexplore.ieee.org/document/5701648
+[MacCartney 2017]: https://ieeexplore.ieee.org/document/7914696

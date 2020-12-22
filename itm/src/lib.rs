@@ -30,9 +30,6 @@
 
 #![forbid(unsafe_code)]
 #![deny(
-    intra_doc_link_resolution_failure,
-    clippy::pedantic,
-    deprecated,
     clippy::option_unwrap_used,
     clippy::result_unwrap_used
 )]
@@ -107,13 +104,14 @@ pub struct Computed {
     /// Terminal effective heights: adjusted against horizons (or obstructions).
     pub effective_heights: (f64, f64), // <he>
 
+    /// The interdecile range of elevations between the antennas (delta H).
     pub terrain_irregularity: f64, // <dh>
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cached {
     pub lvar: isize,
-    pub mdvar: isize,
+    pub variability_mode: isize, // <mdvar>
 
     pub dmin: f64,
     pub xae: f64,
@@ -130,7 +128,7 @@ impl Default for Cached {
     fn default() -> Self {
         Self {
             lvar: 5,
-            mdvar: 12,
+            variability_mode: 12,
 
             dmin: 0.0,
             xae: 0.0,
@@ -361,7 +359,7 @@ impl<'a> Model<'a> {
     /// Given initial but naive horizon calculation, make some adjustments.
     ///
     /// This takes a hybrid approach of using the empirical formulae originally
-    /// designed for the area mode to computed parameters for what is
+    /// designed for the area mode to compute parameters for what is
     /// essentially the point-to-point mode used kinda like the area mode.
     ///
     /// This implementation does away completely with the distinction and
@@ -560,6 +558,63 @@ const QERFI_C: (f64, f64, f64) = (2.515516698, 0.802853, 0.010328);
 
 /// D group of constants for the qerf/qerfi approximations.
 const QERFI_D: (f64, f64, f64) = (1.432788, 0.189269, 0.001308);
+
+/// Dimensionless constant used in the diffraction attenuation function.
+///
+/// See T.A. 4.18, 4.19, 4.24, 4.25.
+///
+/// In the model <11> the constant is 151.0 instead, but that might just be an approximation for
+/// the implementation. Let's use the precise constant as we can.
+const DIFFRACTION_CONSTANT_A: f64 = 151.03;
+
+/// Approximation for the function B(K) in Vogler's formulation of the solution to the smooth,
+/// spherical earth problem.
+///
+/// This is the original approximation used in the algorithm, referenced 4.15-4.25 and defined in
+/// T.A. 6.2. It is not used in Splash's implementation and is only provided as historical detail.
+/// Instead, see the [`vogler_b`] function which implements it exactly.
+fn vogler_b_approx(k: f64) -> f64 {
+    1.607 - k.abs()
+}
+
+/// Fresnel integral approximation from v²
+///
+/// This is the approximation used in the provided code, which is the same approximation used in
+/// the algorithm, but modified to take v² instead of v. It is not used in Splash's implementation
+/// and is only provided as historical detail. Also see the [`fresnel_approx`] function which is
+/// the algorithm's approximation, and [`fresnel_integral`] which implements it exactly.
+fn fresnel_approx_from_squared(v2: f64) -> f64 {
+    if v2 < 5.76 {
+        6.02 + 9.11 * v2.sqrt() - 1.27 * v2
+    } else {
+        12.953 + 10.0 * v2.log10()
+    }
+}
+
+/// Fresnel integral approximation from v
+///
+/// This is the approximation used in the algorithm, see T.A. 6.1, It is not used in Splash's
+/// implementation and is only provided as historical detail. Also see the
+/// [`fresnel_approx_from_squared`] function which is the algorithm's approximation, and
+/// [`fresnel_integral`] which implements it exactly.
+fn fresnel_approx(v: f64) -> f64 {
+    // Not present in the v² approx, but present in the prose in T.A. 6.1
+    assert!(v > 0.0, "fresnel approximation does not hold for v <= 0");
+
+    if v <= 2.40 {
+        6.02 + 9.11 * v - 1.27 * v.powi(2)
+    } else {
+        12.953 + 20.0 * v.log10()
+    }
+}
+
+/// A Fresnel integral used for the model
+///
+///
+fn fresnel_integral(v: f64) -> f64 {
+    todo!("fresnel")
+}
+
 
 // below this point is "original" code that, once the legibility and rustification
 // process is done, should completely disappear / not be used at all.
@@ -1122,6 +1177,10 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let wd1 = (1.0 + qk / q).sqrt();
         let xd1 = propa.dla + propa.tha / prop.gme;
 
+        // Afo is a ‘clutter’ function (empirical): approximately accounts for the median
+        // additional diffraction attenuation due to additional knife-edges between the terminals’
+        // irregular terrain radio horizons that may obstruct the convex hull between the two
+        // irregular terrain radio horizons.
         // T.A. 4.10
         q = (1.0 - 0.8 * (-propa.dlsa / 50e3).exp()) * prop.dh;
         q *= 0.78 * (-(q / 16.0).powf(0.25)).exp();
@@ -1132,24 +1191,21 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let mut aht = 20.0;
         let mut xht = 0.0;
 
-        if false {
-            /// ??? probably used somehow, needs a reread
-            fn make_axht(dl: f64, he: f64, wn: f64, qk: f64) -> (f64, f64) {
-                let a = 0.5 * dl.powi(2) / he;
-                let wa = (a * wn).cbrt();
-                let pk = qk / wa;
-                let q = (1.607 - pk) * 151.0 * wa * dl / a;
-                (q, fht(q, pk))
-            }
-
-            let (x, a) = make_axht(prop.dl.0, prop.he.0, prop.wn, qk);
-            xht += x;
-            aht += a;
-
-            let (x, a) = make_axht(prop.dl.1, prop.he.1, prop.wn, qk);
-            xht += x;
-            aht += a;
+        fn make_axht(dl: f64, he: f64, wn: f64, qk: f64) -> (f64, f64) {
+            let a = 0.5 * dl.powi(2) / he; // T.A. 4.15
+            let wa = (a * wn).cbrt(); // T.A. 4.16
+            let pk = qk / wa; // T.A. 4.17
+            let q = vogler_b_approx(pk) * DIFFRACTION_CONSTANT_A * wa * dl / a; // T.A. 4.18
+            (q, fht(q, pk))
         }
+
+        let (x, a) = make_axht(prop.dl.0, prop.he.0, prop.wn, qk);
+        xht += x;
+        aht += a;
+
+        let (x, a) = make_axht(prop.dl.1, prop.he.1, prop.wn, qk);
+        xht += x;
+        aht += a;
 
         0.0 // returns 0 just because this is the dummy setup round
     } else {
@@ -1158,8 +1214,9 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         // T.A. 4.12
         let th = propa.tha + d * prop.gme;
         let ds = d - propa.dla;
-        let mut q = 0.0795775 * prop.wn * ds * th * th;
+        let q = 0.0795775 * prop.wn * ds * th * th;
 
+        // The knife-edge diffraction function
         // T.A. 4.14
         let adiffv =
             aknfe(q * prop.dl.0 / (ds + prop.dl.0)) + aknfe(q * prop.dl.1 / (ds + prop.dl.1));
@@ -1176,7 +1233,7 @@ fn adiff(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
         let a = ds / th;
         let wa = (a * prop.wn).cbrt();
         let pk = qk / wa; // T.A. 4.17
-        q = (1.607 - pk) * 151.0 * wa * th + xht; // T.A. 4.18 and 6.2
+        let mut q = vogler_b_approx(pk) * DIFFRACTION_CONSTANT_A * wa * th + xht; // T.A. 4.18 and 6.2
         let ar = 0.05751 * q - 4.343 * q.ln() - aht; // T.A. 4.20
         q = (wd1 + xd1 / d) * 6283.2f64.min((1.0 - 0.8 * (-d / 50e3).exp()) * prop.dh * prop.wn);
 
@@ -1312,12 +1369,9 @@ fn ascat(d: f64, prop: &mut Prop, propa: &mut PropA) -> f64 {
 
 // <13> attenuation on a single knife edge
 // this is an approximation of a Fresnel integral, see T.A. 6.1
+// and T.A. 4.21 for the exact form
 fn aknfe(v2: f64) -> f64 {
-    if v2 < 5.76 {
-        6.02 + 9.11 * v2.sqrt() - 1.27 * v2
-    } else {
-        12.953 + 10.0 * v2.log10()
-    }
+    fresnel_approx(v2.sqrt())
 }
 
 // <14> Height gain over geodesic model -- here instead approximated to a
