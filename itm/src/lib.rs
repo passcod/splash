@@ -18,7 +18,7 @@
 //!
 //! Note that the structure of the module is quite different from the above
 //! implementations, making it more idiomatic to Rust and allowing more uses.
-//! Remarkably, we are much more friendly to concurrent computes.
+//! Remarkably, we are much friendlier to concurrent computes.
 //!
 //! This implementation is released in the Public Domain, although note that the
 //! NTIA requests any use of the ITM is properly credited.
